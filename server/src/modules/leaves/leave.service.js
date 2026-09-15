@@ -1,0 +1,219 @@
+import { LEAVE_STATUS, LEAVE_TYPES, NOTIFICATION_TYPES } from '../../constants/index.js';
+import { ApiError } from '../../utils/ApiError.js';
+import { eachDate, isWeekend, todayDateOnly } from '../../utils/dates.js';
+import { USER_SUMMARY_FIELDS } from '../../utils/mongoose.js';
+import { buildPage, getPagination } from '../../utils/pagination.js';
+import { isAdmin, ownershipScope } from '../../utils/scope.js';
+import { getHolidayDates } from '../events/event.service.js';
+import { notify, notifyAdmins } from '../notifications/notification.service.js';
+import { Leave } from './leave.model.js';
+
+const ACTIVE_STATUSES = [LEAVE_STATUS.PENDING, LEAVE_STATUS.APPROVED];
+
+const POPULATE = [
+  { path: 'employee', select: USER_SUMMARY_FIELDS },
+  { path: 'reviewedBy', select: 'firstName lastName' },
+  { path: 'lastEditedBy', select: 'firstName lastName' },
+];
+
+const fullName = (u) => [u?.firstName, u?.lastName].filter(Boolean).join(' ');
+
+/** Working days in the range, excluding weekends and company holidays. */
+export async function calculateLeaveDays({ startDate, endDate, isHalfDay }) {
+  const holidays = await getHolidayDates(startDate, endDate);
+  let days = 0;
+  for (const date of eachDate(startDate, endDate)) {
+    if (!isWeekend(date) && !holidays.has(date)) days += 1;
+  }
+  if (isHalfDay && days > 0) days = 0.5;
+
+  if (days === 0) {
+    throw ApiError.badRequest('The selected dates fall entirely on weekends or company holidays', {
+      code: 'VALIDATION_ERROR',
+      details: [{ path: 'endDate', message: 'No working days in the selected range' }],
+    });
+  }
+  return days;
+}
+
+async function assertNoOverlap(employeeId, { startDate, endDate }, excludeId) {
+  const filter = {
+    employee: employeeId,
+    status: { $in: ACTIVE_STATUSES },
+    startDate: { $lte: endDate },
+    endDate: { $gte: startDate },
+  };
+  if (excludeId) filter._id = { $ne: excludeId };
+
+  const clash = await Leave.findOne(filter).lean();
+  if (clash) {
+    throw ApiError.conflict(
+      `These dates overlap with an existing ${clash.status} leave (${clash.startDate} to ${clash.endDate})`,
+      { details: [{ path: 'startDate', message: 'Overlaps with another leave request' }] },
+    );
+  }
+}
+
+/** Loads a leave the actor is allowed to see; other employees' leaves are reported as not found. */
+async function findScopedLeave(id, actor) {
+  const leave = await Leave.findOne({ _id: id, ...ownershipScope(actor) });
+  if (!leave) throw ApiError.notFound('Leave request not found');
+  return leave;
+}
+
+export async function listLeaves(query, actor) {
+  const { employee, status, type, from, to, sortBy, sortOrder } = query;
+  const filter = { ...ownershipScope(actor) };
+
+  // The employee filter is only honoured for admins; employees are always pinned to themselves.
+  if (employee && isAdmin(actor)) filter.employee = employee;
+  if (status) filter.status = status;
+  if (type) filter.type = type;
+  if (from) filter.endDate = { $gte: from };
+  if (to) filter.startDate = { $lte: to };
+
+  const { page, limit, skip } = getPagination(query);
+  const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1, _id: -1 };
+
+  const [items, total] = await Promise.all([
+    Leave.find(filter).sort(sort).skip(skip).limit(limit).populate(POPULATE),
+    Leave.countDocuments(filter),
+  ]);
+  return buildPage(items, total, { page, limit });
+}
+
+export async function getLeave(id, actor) {
+  const leave = await findScopedLeave(id, actor);
+  return leave.populate(POPULATE);
+}
+
+export async function applyLeave(data, actor) {
+  await assertNoOverlap(actor._id, data);
+  const days = await calculateLeaveDays(data);
+
+  const leave = await Leave.create({ ...data, days, employee: actor._id, status: LEAVE_STATUS.PENDING });
+
+  await notifyAdmins(
+    {
+      type: NOTIFICATION_TYPES.LEAVE_SUBMITTED,
+      title: 'New leave request',
+      message: `${fullName(actor)} requested ${days} day(s) of ${data.type} leave from ${data.startDate} to ${data.endDate}.`,
+      link: `/leave-management?leave=${leave.id}`,
+    },
+    { exclude: actor._id },
+  );
+
+  return leave.populate(POPULATE);
+}
+
+export async function updateLeave(id, data, actor) {
+  const leave = await findScopedLeave(id, actor);
+
+  if (leave.status === LEAVE_STATUS.CANCELLED) {
+    throw ApiError.conflict('Cancelled leave requests cannot be edited');
+  }
+  if (!isAdmin(actor) && leave.status !== LEAVE_STATUS.PENDING) {
+    throw ApiError.conflict('Only pending leave requests can be edited. Please contact your administrator.');
+  }
+
+  await assertNoOverlap(leave.employee, data, leave._id);
+  const days = await calculateLeaveDays(data);
+
+  Object.assign(leave, data, { days, lastEditedBy: actor._id });
+  await leave.save();
+  return leave.populate(POPULATE);
+}
+
+export async function cancelLeave(id, actor) {
+  const leave = await findScopedLeave(id, actor);
+
+  const cancellable =
+    leave.status === LEAVE_STATUS.PENDING ||
+    (leave.status === LEAVE_STATUS.APPROVED && leave.startDate > todayDateOnly());
+
+  if (!cancellable) {
+    throw ApiError.conflict('Only pending leaves, or approved leaves that have not started, can be cancelled');
+  }
+
+  const wasApproved = leave.status === LEAVE_STATUS.APPROVED;
+  leave.status = LEAVE_STATUS.CANCELLED;
+  leave.cancelledAt = new Date();
+  await leave.save();
+  await leave.populate(POPULATE);
+
+  if (wasApproved || !isAdmin(actor)) {
+    await notifyAdmins(
+      {
+        type: NOTIFICATION_TYPES.LEAVE_CANCELLED,
+        title: 'Leave request cancelled',
+        message: `${fullName(leave.employee)} cancelled their leave from ${leave.startDate} to ${leave.endDate}.`,
+        link: `/leave-management?leave=${leave.id}`,
+      },
+      { exclude: actor._id },
+    );
+  }
+
+  return leave;
+}
+
+export async function reviewLeave(id, { status, reviewNote = '' }, actor) {
+  const leave = await Leave.findById(id);
+  if (!leave) throw ApiError.notFound('Leave request not found');
+
+  if (leave.status === LEAVE_STATUS.CANCELLED) {
+    throw ApiError.conflict('This leave request was cancelled by the employee');
+  }
+  if (leave.status === status) {
+    throw ApiError.conflict(`This leave request is already ${status}`);
+  }
+  if (status === LEAVE_STATUS.APPROVED) {
+    await assertNoOverlap(leave.employee, leave, leave._id);
+  }
+
+  Object.assign(leave, { status, reviewNote, reviewedBy: actor._id, reviewedAt: new Date() });
+  await leave.save();
+
+  const approved = status === LEAVE_STATUS.APPROVED;
+  await notify(leave.employee, {
+    type: approved ? NOTIFICATION_TYPES.LEAVE_APPROVED : NOTIFICATION_TYPES.LEAVE_REJECTED,
+    title: approved ? 'Leave approved' : 'Leave rejected',
+    message: `Your ${leave.type} leave from ${leave.startDate} to ${leave.endDate} was ${status} by ${fullName(actor)}.${
+      reviewNote ? ` Note: ${reviewNote}` : ''
+    }`,
+    link: `/my-leave?leave=${leave.id}`,
+  });
+
+  return leave.populate(POPULATE);
+}
+
+/** Per-type totals for a year, scoped to the actor (or organisation-wide for admins). */
+export async function getLeaveSummary(actor, { year = Number(todayDateOnly().slice(0, 4)) } = {}) {
+  const match = {
+    ...ownershipScope(actor),
+    startDate: { $gte: `${year}-01-01`, $lte: `${year}-12-31` },
+  };
+
+  const rows = await Leave.aggregate([
+    { $match: match },
+    { $group: { _id: { status: '$status', type: '$type' }, days: { $sum: '$days' }, count: { $sum: 1 } } },
+  ]);
+
+  const byType = Object.fromEntries(LEAVE_TYPES.map((t) => [t, { approvedDays: 0, pendingDays: 0 }]));
+  const byStatus = Object.fromEntries(Object.values(LEAVE_STATUS).map((s) => [s, 0]));
+
+  for (const { _id, days, count } of rows) {
+    byStatus[_id.status] += count;
+    if (_id.status === LEAVE_STATUS.APPROVED) byType[_id.type].approvedDays += days;
+    if (_id.status === LEAVE_STATUS.PENDING) byType[_id.type].pendingDays += days;
+  }
+
+  const approvedDays = Object.values(byType).reduce((sum, t) => sum + t.approvedDays, 0);
+  return { year, byType, byStatus, approvedDays };
+}
+
+/** Approved leaves covering a given date — organisation-wide, admin use only. */
+export async function listOnLeave(date = todayDateOnly()) {
+  return Leave.find({ status: LEAVE_STATUS.APPROVED, startDate: { $lte: date }, endDate: { $gte: date } })
+    .populate('employee', USER_SUMMARY_FIELDS)
+    .sort({ endDate: 1 });
+}

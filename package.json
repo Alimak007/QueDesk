@@ -1,0 +1,25 @@
+{
+  "name": "quedesk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "My Portal — role-based employee management portal (MERN)",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client",
+    "start": "npm run start -w server",
+    "seed": "npm run seed -w server",
+    "seed:demo": "npm run seed:demo -w server",
+    "test": "npm run test -w server",
+    "lint": "npm run lint -w client"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}
