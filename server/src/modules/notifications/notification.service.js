@@ -24,6 +24,18 @@ export async function notifyAdmins(payload, { exclude } = {}) {
   return notify(recipients, payload);
 }
 
+/** Notifies admins plus every active employee who has been granted `module.action`. */
+export async function notifyUsersWithPermission(module, action, payload, { exclude } = {}) {
+  const users = await User.find({
+    status: USER_STATUS.ACTIVE,
+    $or: [{ role: ROLES.ADMIN }, { [`permissions.${module}`]: action }],
+  })
+    .select('_id')
+    .lean();
+  const recipients = users.map((u) => u._id.toString()).filter((id) => id !== String(exclude));
+  return notify(recipients, payload);
+}
+
 export async function listNotifications(userId, { limit, unreadOnly }) {
   const filter = { recipient: userId };
   if (unreadOnly) filter.readAt = null;

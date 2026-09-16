@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { CalendarDays, ClipboardList, Eye, EyeOff, KanbanSquare, Lock, Mail, Plane, ShieldCheck } from 'lucide-react';
+import { CalendarDays, ClipboardList, Eye, EyeOff, KanbanSquare, Lock, Mail, Plane, ReceiptText, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useLocation, useNavigate } from 'react-router';
@@ -18,7 +18,8 @@ const HIGHLIGHTS = [
   { icon: Plane, title: 'Leave, without the email chains', text: 'Apply, track and approve requests in a couple of clicks.' },
   { icon: ClipboardList, title: 'Daily status in one place', text: 'A searchable history of what everyone worked on.' },
   { icon: CalendarDays, title: 'A shared company calendar', text: 'Holidays, events and meetings that everyone can see.' },
-  { icon: KanbanSquare, title: 'Sales pipeline, your way', text: 'List and Kanban views with a form your admin configures.' },
+  { icon: KanbanSquare, title: 'Leads to customers', text: 'A pipeline you configure, converting won leads into customers.' },
+  { icon: ReceiptText, title: 'Payslips and invoices', text: 'Branded PDF documents generated from your own company profiles.' },
 ];
 
 export default function LoginPage() {

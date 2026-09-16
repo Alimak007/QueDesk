@@ -3,6 +3,7 @@ import { env } from '../config/env.js';
 import { USER_STATUS } from '../constants/index.js';
 import { User } from '../modules/users/user.model.js';
 import { ApiError } from '../utils/ApiError.js';
+import { can } from '../utils/permissions.js';
 
 function extractToken(req) {
   const cookieToken = req.cookies?.[env.COOKIE_NAME];
@@ -51,6 +52,18 @@ async function resolveUser(req) {
     return { error: 'Your account has been deactivated.' };
   }
   return { user };
+}
+
+/**
+ * Requires at least one of `actions` on `module` (admins always pass).
+ * Must run after `authenticate`.
+ */
+export function requirePermission(module, ...actions) {
+  return (req, _res, next) => {
+    if (!req.user) return next(ApiError.unauthorized());
+    if (!can(req.user, module, ...actions)) return next(ApiError.forbidden());
+    return next();
+  };
 }
 
 /** Restricts a route to the given roles. Must run after `authenticate`. */

@@ -1,6 +1,5 @@
 import { Router } from 'express';
-import { ROLES } from '../../constants/index.js';
-import { authenticate, authorize } from '../../middlewares/auth.js';
+import { authenticate, requirePermission } from '../../middlewares/auth.js';
 import { validate } from '../../middlewares/validate.js';
 import { idParams } from '../../utils/validators.js';
 import * as controller from './user.controller.js';
@@ -19,20 +18,28 @@ router.use(authenticate);
 // Available to every signed-in user (non-sensitive fields only).
 router.get('/directory', controller.directory);
 
-// Everything below is admin-only.
-router.use(authorize(ROLES.ADMIN));
-
-router.get('/', validate({ query: listUsersQuery }), controller.list);
-router.get('/departments', controller.departments);
-router.post('/', validate({ body: createUserSchema }), controller.create);
-router.get('/:id', validate({ params: idParams }), controller.getOne);
-router.patch('/:id', validate({ params: idParams, body: updateUserSchema }), controller.update);
-router.patch('/:id/status', validate({ params: idParams, body: updateStatusSchema }), controller.updateStatus);
+router.get('/', requirePermission('employees', 'view'), validate({ query: listUsersQuery }), controller.list);
+router.get('/departments', requirePermission('employees', 'view', 'create', 'edit'), controller.departments);
+router.post('/', requirePermission('employees', 'create'), validate({ body: createUserSchema }), controller.create);
+router.get('/:id', requirePermission('employees', 'view'), validate({ params: idParams }), controller.getOne);
+router.patch(
+  '/:id',
+  requirePermission('employees', 'edit'),
+  validate({ params: idParams, body: updateUserSchema }),
+  controller.update,
+);
+router.patch(
+  '/:id/status',
+  requirePermission('employees', 'edit'),
+  validate({ params: idParams, body: updateStatusSchema }),
+  controller.updateStatus,
+);
 router.post(
   '/:id/reset-password',
+  requirePermission('employees', 'edit'),
   validate({ params: idParams, body: resetPasswordSchema }),
   controller.resetPassword,
 );
-router.delete('/:id', validate({ params: idParams }), controller.remove);
+router.delete('/:id', requirePermission('employees', 'delete'), validate({ params: idParams }), controller.remove);
 
 export default router;

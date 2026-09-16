@@ -1,14 +1,17 @@
 import { ClipboardList, FilterX, PenLine, Plus, Search, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button, Card, EmptyState, ErrorState, Input, PageHeader, Pagination, Skeleton } from '@/components/ui';
+import { usePermissions } from '@/features/auth/usePermissions';
 import { useDebouncedValue, useDocumentTitle, useQueryState, useUrlParam } from '@/hooks';
 import { formatDate, todayDateOnly } from '@/lib/dates';
 import { useStatusReports } from './api';
 import { ReportBody, ReportCard } from './ReportCard';
 import { StatusFormModal } from './StatusFormModal';
 
-export default function MyStatusPage() {
-  useDocumentTitle('My Daily Status');
+export default function MyStatusPage({ embedded = false }) {
+  useDocumentTitle(embedded ? undefined : 'My Daily Status');
+  const { can } = usePermissions();
+  const canSubmit = can('dailyStatus', 'create');
   const today = todayDateOnly();
   const [filters, setFilters] = useQueryState({ from: '', to: '', search: '', page: 1 });
   const [searchInput, setSearchInput] = useState(filters.search);
@@ -20,9 +23,10 @@ export default function MyStatusPage() {
     if (debouncedSearch !== filters.search) setFilters({ search: debouncedSearch });
   }, [debouncedSearch, filters.search, setFilters]);
 
-  const todayQuery = useStatusReports({ from: today, to: today, limit: 1 });
+  // `scope: mine` keeps this view personal even for reviewers, who otherwise see everyone.
+  const todayQuery = useStatusReports({ from: today, to: today, limit: 1, scope: 'mine' });
   const todayReport = todayQuery.data?.items?.[0];
-  const { data, isPending, isError, error, refetch } = useStatusReports({ ...filters, limit: 10 });
+  const { data, isPending, isError, error, refetch } = useStatusReports({ ...filters, scope: 'mine', limit: 10 });
 
   // `?action=new` (dashboard quick action) opens today's report, for editing if it already exists.
   const fromQuickAction = !modal.open && action === 'new' && !todayQuery.isPending;
@@ -33,15 +37,27 @@ export default function MyStatusPage() {
 
   return (
     <>
-      <PageHeader
-        title="My Daily Status"
-        description="Submit your daily work updates and review your history."
-        actions={
-          <Button leftIcon={Plus} onClick={() => setModal({ open: true, report: null })}>
-            Add status
-          </Button>
-        }
-      />
+      {embedded ? (
+        canSubmit && (
+          <div className="mb-4 flex justify-end">
+            <Button leftIcon={Plus} onClick={() => setModal({ open: true, report: null })}>
+              Add status
+            </Button>
+          </div>
+        )
+      ) : (
+        <PageHeader
+          title="My Daily Status"
+          description="Submit your daily work updates and review your history."
+          actions={
+            canSubmit && (
+              <Button leftIcon={Plus} onClick={() => setModal({ open: true, report: null })}>
+                Add status
+              </Button>
+            )
+          }
+        />
+      )}
 
       {/* Today */}
       <Card className="mb-6 overflow-hidden">

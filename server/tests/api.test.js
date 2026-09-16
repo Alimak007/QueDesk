@@ -3,7 +3,8 @@
  * data privacy (§6.3, §7.3, §13), role-based access (§15), the dynamic Sales
  * form (§11) and employee deletion (§17 rule 8).
  *
- * Runs against a throwaway database (`<MONGODB_DB_NAME>_test`) that is dropped afterwards.
+ * Runs against a disposable in-memory MongoDB: no network, no credentials,
+ * and no chance of touching real data.
  */
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
@@ -12,13 +13,12 @@ process.env.NODE_ENV = 'test';
 
 const { default: mongoose } = await import('mongoose');
 const { default: request } = await import('supertest');
-const { env } = await import('../src/config/env.js');
-const { connectDatabase } = await import('../src/config/db.js');
+const { startTestDatabase, stopTestDatabase } = await import('./helpers.js');
 const { createApp } = await import('../src/app.js');
-const { ensureDefaultSalesFields } = await import('../src/modules/sales/salesField.service.js');
+const { runMigrations } = await import('../src/config/migrations.js');
+await import('../src/models.js');
 const { createUser } = await import('../src/modules/users/user.service.js');
 
-const TEST_DB = `${env.MONGODB_DB_NAME}_test`;
 const PASSWORD = 'Passw0rd!';
 
 let app;
@@ -47,9 +47,8 @@ async function signIn(email) {
 }
 
 before(async () => {
-  await connectDatabase(TEST_DB);
-  await mongoose.connection.dropDatabase();
-  await ensureDefaultSalesFields();
+  await startTestDatabase();
+  await runMigrations();
   app = createApp();
 
   const admin = await createUser({ firstName: 'Ada', lastName: 'Admin', email: 'admin@test.io', password: PASSWORD, role: 'admin' });
@@ -63,8 +62,7 @@ before(async () => {
 });
 
 after(async () => {
-  await mongoose.connection.dropDatabase();
-  await mongoose.disconnect();
+  await stopTestDatabase();
 });
 
 describe('authentication', () => {

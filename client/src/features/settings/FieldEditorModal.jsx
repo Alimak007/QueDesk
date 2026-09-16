@@ -116,7 +116,7 @@ function OptionsEditor({ options, onChange, error }) {
   );
 }
 
-export function FieldEditorModal({ open, onOpenChange, field, currency }) {
+export function FieldEditorModal({ open, onOpenChange, field, currency, entity = 'lead' }) {
   const isEdit = Boolean(field);
   const create = useCreateField();
   const update = useUpdateField();
@@ -192,7 +192,7 @@ export function FieldEditorModal({ open, onOpenChange, field, currency }) {
 
     try {
       if (isEdit) await update.mutateAsync({ id: field.id, ...payload });
-      else await create.mutateAsync({ ...payload, type: values.type, ...(values.key ? { key: values.key } : {}) });
+      else await create.mutateAsync({ ...payload, entity, type: values.type, ...(values.key ? { key: values.key } : {}) });
       toast.success(isEdit ? 'Field updated' : 'Field added', { description: 'The Sales form now reflects this change.' });
       onOpenChange(false);
     } catch (err) {

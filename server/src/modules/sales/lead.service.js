@@ -3,7 +3,7 @@ import { ApiError } from '../../utils/ApiError.js';
 import { buildPage, escapeRegex, getPagination } from '../../utils/pagination.js';
 import { User } from '../users/user.model.js';
 import { Lead } from './lead.model.js';
-import { buildSearchText, validateLeadData } from './leadData.js';
+import { buildSearchText, validateRecordData } from './recordData.js';
 import { listActiveFields } from './salesField.service.js';
 import { getSalesSettings } from './salesSettings.model.js';
 
@@ -13,6 +13,7 @@ const POPULATE = [
   { path: 'owner', select: 'firstName lastName designation department' },
   { path: 'createdBy', select: 'firstName lastName' },
   { path: 'updatedBy', select: 'firstName lastName' },
+  { path: 'customer', select: 'data.customerName' },
 ];
 
 async function assertValidOwner(ownerId) {
@@ -25,11 +26,20 @@ async function assertValidOwner(ownerId) {
   }
 }
 
-function buildFilter({ search, owner, group }, settings) {
+/**
+ * A converted lead has left the pipeline: it keeps its place in the list as a
+ * record of where the customer came from, but never appears on the board again.
+ */
+const ACTIVE = { customer: null };
+const CONVERTED = { customer: { $ne: null } };
+
+function buildFilter({ search, owner, group, state }, settings) {
   const filter = {};
   if (owner) filter.owner = owner;
   if (group) filter[`data.${settings.kanbanGroupField}`] = group === '__none__' ? null : group;
   if (search) filter.searchText = new RegExp(escapeRegex(search.toLowerCase()));
+  if (state === 'active') Object.assign(filter, ACTIVE);
+  if (state === 'converted') Object.assign(filter, CONVERTED);
   return filter;
 }
 
@@ -52,7 +62,7 @@ export async function getBoard(query) {
   const groupField = fields.find((f) => f.key === settings.kanbanGroupField);
   if (!groupField) throw ApiError.conflict('The Kanban grouping field is not configured. Ask an admin to set it.');
 
-  const filter = buildFilter(query, settings);
+  const filter = { ...buildFilter(query, settings), ...ACTIVE };
   const leads = await Lead.find(filter)
     .sort({ position: 1, updatedAt: -1 })
     .limit(BOARD_LIMIT)
@@ -92,7 +102,7 @@ export async function createLead({ data, owner }, actor) {
   const ownerId = owner ?? actor._id;
   if (owner) await assertValidOwner(owner);
 
-  const values = validateLeadData(data, fields);
+  const values = validateRecordData(data, fields);
   const lead = await Lead.create({
     data: values,
     owner: ownerId,
@@ -108,9 +118,16 @@ export async function updateLead(id, { data, owner, position }, actor) {
   const lead = await Lead.findById(id);
   if (!lead) throw ApiError.notFound('Lead not found');
 
+  // A converted lead is a historical record; the customer is the live one now.
+  if (lead.customer) {
+    throw ApiError.conflict('This lead has been converted to a customer. Edit the customer record instead.', {
+      code: 'LEAD_CONVERTED',
+    });
+  }
+
   const fields = await listActiveFields();
   if (data) {
-    lead.data = validateLeadData(data, fields, { existing: lead.data ?? {} });
+    lead.data = validateRecordData(data, fields, { existing: lead.data ?? {} });
     lead.searchText = buildSearchText(lead.data, fields);
     lead.markModified('data');
   }
@@ -121,6 +138,7 @@ export async function updateLead(id, { data, owner, position }, actor) {
   if (position !== undefined) lead.position = position;
   lead.updatedBy = actor._id;
   await lead.save();
+
   return lead.populate(POPULATE);
 }
 
@@ -130,9 +148,15 @@ export async function moveLead(id, { value, position }, actor) {
   return updateLead(id, { data: { [settings.kanbanGroupField]: value }, position }, actor);
 }
 
+
 export async function deleteLead(id) {
   const lead = await Lead.findByIdAndDelete(id);
   if (!lead) throw ApiError.notFound('Lead not found');
+  // Keep any converted customer, it simply loses its origin reference.
+  if (lead.customer) {
+    const { Customer } = await import('../customers/customer.model.js');
+    await Customer.updateOne({ _id: lead.customer }, { $set: { lead: null } });
+  }
 }
 
 export async function getSalesSummary({ owner } = {}) {
@@ -141,7 +165,7 @@ export async function getSalesSummary({ owner } = {}) {
   const valueKey = settings.valueField;
   const groupField = fields.find((f) => f.key === groupKey);
 
-  const match = owner ? { owner } : {};
+  const match = owner ? { owner, ...ACTIVE } : { ...ACTIVE };
   const [rows, total] = await Promise.all([
     Lead.aggregate([
       { $match: match },

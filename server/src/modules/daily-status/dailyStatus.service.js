@@ -3,7 +3,8 @@ import { ApiError } from '../../utils/ApiError.js';
 import { todayDateOnly } from '../../utils/dates.js';
 import { USER_SUMMARY_FIELDS } from '../../utils/mongoose.js';
 import { buildPage, escapeRegex, getPagination } from '../../utils/pagination.js';
-import { isAdmin, ownershipScope } from '../../utils/scope.js';
+import { can } from '../../utils/permissions.js';
+import { canManage } from '../../utils/scope.js';
 import { Leave } from '../leaves/leave.model.js';
 import { User } from '../users/user.model.js';
 import { DailyStatus } from './dailyStatus.model.js';
@@ -13,17 +14,25 @@ const POPULATE = [
   { path: 'lastEditedBy', select: 'firstName lastName role' },
 ];
 
+const canReview = (actor) => canManage(actor, 'dailyStatus', 'review');
+
+/** Reviewers see everyone's reports unless they ask for their own; others only see theirs. */
+function reportScope(actor, scope) {
+  return canReview(actor) && scope !== 'mine' ? {} : { employee: actor._id };
+}
+
 async function findScopedReport(id, actor) {
-  const report = await DailyStatus.findOne({ _id: id, ...ownershipScope(actor) });
+  const report = await DailyStatus.findOne({ _id: id, ...reportScope(actor) });
   if (!report) throw ApiError.notFound('Status report not found');
   return report;
 }
 
 export async function listReports(query, actor) {
-  const { employee, from, to, search } = query;
-  const filter = { ...ownershipScope(actor) };
+  const { employee, from, to, search, scope } = query;
+  const filter = reportScope(actor, scope);
 
-  if (employee && isAdmin(actor)) filter.employee = employee;
+  // Can only narrow an organisation-wide view, never widen a personal one.
+  if (employee && !filter.employee) filter.employee = employee;
   if (from || to) filter.date = { ...(from && { $gte: from }), ...(to && { $lte: to }) };
   if (search) {
     const rx = new RegExp(escapeRegex(search), 'i');
@@ -57,6 +66,8 @@ export async function createReport(data, actor) {
 
 export async function updateReport(id, data, actor) {
   const report = await findScopedReport(id, actor);
+  const own = String(report.employee) === String(actor._id);
+  if (own ? !can(actor, 'dailyStatus', 'edit') : !canReview(actor)) throw ApiError.forbidden();
   Object.assign(report, data, { lastEditedBy: actor._id });
   await report.save();
   return report.populate(POPULATE);

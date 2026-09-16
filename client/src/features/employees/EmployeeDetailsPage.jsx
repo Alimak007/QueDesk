@@ -10,6 +10,7 @@ import { LeaveStatusBadge, LeaveTypeLabel } from '@/features/leaves/components';
 import { formatLeaveDays } from '@/features/leaves/utils';
 import { LeaveDetailsSheet } from '@/features/leaves/LeaveDetailsSheet';
 import { LeaveFormModal } from '@/features/leaves/LeaveFormModal';
+import { usePermissions } from '@/features/auth/usePermissions';
 import { useDocumentTitle } from '@/hooks';
 import { formatDate, formatDateRange, timeAgo } from '@/lib/dates';
 import { fullName } from '@/lib/utils';
@@ -110,6 +111,7 @@ export default function EmployeeDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [tab, setTab] = useState('leaves');
+  const { can } = usePermissions();
   const { data, isPending, isError, error, refetch } = useEmployee(id);
   const actions = useEmployeeActions({ onDeleted: () => navigate('/employees', { replace: true }) });
   const employee = data?.user;
@@ -176,24 +178,30 @@ export default function EmployeeDetailsPage() {
                 </p>
 
                 <div className="mt-5 grid grid-cols-2 gap-2">
-                  <Button variant="secondary" size="sm" leftIcon={Pencil} onClick={() => actions.edit(employee)}>
-                    Edit
-                  </Button>
-                  <Button variant="secondary" size="sm" leftIcon={KeyRound} onClick={() => actions.resetPassword(employee)}>
-                    Password
-                  </Button>
-                  <Button
-                    variant={employee.status === 'active' ? 'danger-soft' : 'success-soft'}
-                    size="sm"
-                    leftIcon={employee.status === 'active' ? UserRoundX : UserCheck}
-                    disabled={actions.isSelf(employee)}
-                    onClick={() => actions.toggleStatus(employee)}
-                  >
-                    {employee.status === 'active' ? 'Deactivate' : 'Reactivate'}
-                  </Button>
-                  <Button variant="ghost" size="sm" leftIcon={Trash2} disabled={actions.isSelf(employee)} onClick={() => actions.remove(employee)}>
-                    Delete
-                  </Button>
+                  {can('employees', 'edit') && (
+                    <>
+                      <Button variant="secondary" size="sm" leftIcon={Pencil} onClick={() => actions.edit(employee)}>
+                        Edit
+                      </Button>
+                      <Button variant="secondary" size="sm" leftIcon={KeyRound} onClick={() => actions.resetPassword(employee)}>
+                        Password
+                      </Button>
+                      <Button
+                        variant={employee.status === 'active' ? 'danger-soft' : 'success-soft'}
+                        size="sm"
+                        leftIcon={employee.status === 'active' ? UserRoundX : UserCheck}
+                        disabled={actions.isSelf(employee)}
+                        onClick={() => actions.toggleStatus(employee)}
+                      >
+                        {employee.status === 'active' ? 'Deactivate' : 'Reactivate'}
+                      </Button>
+                    </>
+                  )}
+                  {can('employees', 'delete') && (
+                    <Button variant="ghost" size="sm" leftIcon={Trash2} disabled={actions.isSelf(employee)} onClick={() => actions.remove(employee)}>
+                      Delete
+                    </Button>
+                  )}
                 </div>
               </div>
             </Card>

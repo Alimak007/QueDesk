@@ -33,8 +33,8 @@ import { LeaveFormModal } from './LeaveFormModal';
 
 const DEFAULTS = { status: 'pending', employee: '', type: '', from: '', to: '', page: 1 };
 
-export default function LeaveManagementPage() {
-  useDocumentTitle('Leave Management');
+export default function LeaveManagementPage({ embedded = false }) {
+  useDocumentTitle(embedded ? undefined : 'Leave Management');
   const [filters, setFilters] = useQueryState(DEFAULTS);
   const [detailsId, setDetailsId] = useUrlParam('leave');
   const [reviewMode, setReviewMode] = useState(null);
@@ -57,7 +57,9 @@ export default function LeaveManagementPage() {
 
   return (
     <>
-      <PageHeader title="Leave Management" description="Review, approve and track leave requests across the organisation." />
+      {!embedded && (
+        <PageHeader title="Leave Management" description="Review, approve and track leave requests across the organisation." />
+      )}
 
       <Card>
         <div className="space-y-3 border-b border-slate-100 px-5 py-4">

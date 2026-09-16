@@ -13,7 +13,10 @@ export function LogoMark({ className }) {
         </linearGradient>
       </defs>
       <rect width="32" height="32" rx="9" fill={`url(#${gradientId})`} />
-      <path d="M9 22V10h3.2l3.8 6.2 3.8-6.2H23v12h-3v-7l-3.2 5.1h-1.6L12 15v7z" fill="#fff" />
+      <path
+        d="M16 8.5a7.5 7.5 0 1 0 4.03 13.83l2.02 2.02 1.98-1.98-1.98-1.98A7.5 7.5 0 0 0 16 8.5Zm0 3a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9Z"
+        fill="#fff"
+      />
     </svg>
   );
 }
@@ -26,7 +29,7 @@ export function Logo({ size = 'md', className, showText = true }) {
       {showText && (
         <span className="leading-none">
           <span className={cn('block font-semibold tracking-tight text-slate-900', size === 'lg' ? 'text-xl' : 'text-[15px]')}>
-            My Portal
+            QueDesk
           </span>
           <span className="mt-0.5 block text-[11px] font-medium text-slate-500">Que Info Technologies</span>
         </span>

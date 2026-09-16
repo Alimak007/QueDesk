@@ -4,7 +4,8 @@ export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
   withCredentials: true,
   timeout: 20000,
-  headers: { 'Content-Type': 'application/json' },
+  // No global Content-Type: axios picks JSON for plain objects and
+  // multipart/form-data (with the required boundary) for FormData uploads.
 });
 
 let unauthorizedHandler = null;
@@ -61,6 +62,22 @@ export const http = {
   patch: (url, body) => unwrap(api.patch(url, body)),
   delete: (url) => unwrap(api.delete(url)),
 };
+
+/** Fetches a binary document (PDF) as a Blob, keeping the session cookie. */
+export const getBlob = (url, params) => api.get(url, { params, responseType: 'blob' }).then((res) => res.data);
+
+/** Saves a Blob to the user's device. */
+export function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Revoke on the next tick so Safari has time to start the download.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 /** Strips empty values so they are not sent as query params. */
 export function cleanParams(params = {}) {

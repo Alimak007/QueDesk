@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { SALES_FIELD_TYPES } from '../../constants/index.js';
+import { FIELD_ENTITIES, SALES_FIELD_TYPES } from '../../constants/index.js';
 import { toJSONPlugin } from '../../utils/mongoose.js';
 
 const optionSchema = new mongoose.Schema(
@@ -13,8 +13,10 @@ const optionSchema = new mongoose.Schema(
 
 const salesFieldSchema = new mongoose.Schema(
   {
-    /** Stable machine name used as the key inside `Lead.data`. Immutable. */
-    key: { type: String, required: true, unique: true, trim: true, immutable: true },
+    /** Which record type this field belongs to. */
+    entity: { type: String, enum: FIELD_ENTITIES, default: 'lead', immutable: true },
+    /** Stable machine name used as the key inside the record's `data`. Unique per entity. Immutable. */
+    key: { type: String, required: true, trim: true, immutable: true },
     label: { type: String, required: true, trim: true, maxlength: 60 },
     /** Immutable so that stored lead values never become inconsistent with their type. */
     type: { type: String, enum: SALES_FIELD_TYPES, required: true, immutable: true },
@@ -36,7 +38,8 @@ const salesFieldSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-salesFieldSchema.index({ isArchived: 1, order: 1 });
+salesFieldSchema.index({ entity: 1, key: 1 }, { unique: true });
+salesFieldSchema.index({ entity: 1, isArchived: 1, order: 1 });
 
 toJSONPlugin(salesFieldSchema);
 

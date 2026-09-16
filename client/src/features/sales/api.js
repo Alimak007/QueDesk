@@ -3,17 +3,18 @@ import { cleanParams, http } from '@/lib/api';
 
 export const salesKeys = {
   all: ['sales'],
-  config: (includeArchived = false) => ['sales', 'config', { includeArchived }],
+  config: (entity = 'lead', includeArchived = false) => ['sales', 'config', { entity, includeArchived }],
   leads: ['sales', 'leads'],
   list: (params) => ['sales', 'leads', 'list', params],
   board: (params) => ['sales', 'leads', 'board', params],
   summary: ['sales', 'leads', 'summary'],
 };
 
-export function useSalesConfig({ includeArchived = false } = {}) {
+/** Field configuration for a record type: `lead` (default) or `customer`. */
+export function useSalesConfig({ includeArchived = false, entity = 'lead' } = {}) {
   return useQuery({
-    queryKey: salesKeys.config(includeArchived),
-    queryFn: () => http.get('/sales/config', includeArchived ? { includeArchived: true } : undefined),
+    queryKey: salesKeys.config(entity, includeArchived),
+    queryFn: () => http.get('/sales/config', cleanParams({ entity, includeArchived: includeArchived || undefined })),
     staleTime: 60_000,
   });
 }
@@ -42,6 +43,8 @@ function useInvalidateSales() {
   const queryClient = useQueryClient();
   return () => {
     queryClient.invalidateQueries({ queryKey: salesKeys.all });
+    // A stage change can create or remove a customer.
+    queryClient.invalidateQueries({ queryKey: ['customers'] });
     queryClient.invalidateQueries({ queryKey: ['dashboard'] });
   };
 }
@@ -89,6 +92,8 @@ export function useMoveLead(boardParams) {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: salesKeys.leads });
+      // Dragging into or out of the customer stage adds or removes a customer.
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
@@ -103,6 +108,9 @@ function useConfigMutation(mutationFn) {
 
 export const useCreateField = () => useConfigMutation((body) => http.post('/sales/fields', body).then((d) => d.field));
 
+export const useConvertLeadToCustomer = () =>
+  useConfigMutation((leadId) => http.post(`/sales/leads/${leadId}/convert`));
+
 export const useUpdateField = () =>
   useConfigMutation(({ id, ...body }) => http.patch(`/sales/fields/${id}`, body).then((d) => d.field));
 
@@ -111,7 +119,7 @@ export const useArchiveField = () =>
 
 export const useDeleteField = () => useConfigMutation((id) => http.delete(`/sales/fields/${id}`));
 
-export const useReorderFields = () => useConfigMutation((ids) => http.put('/sales/fields/reorder', { ids }));
+export const useReorderFields = () => useConfigMutation(({ entity, ids }) => http.put('/sales/fields/reorder', { entity, ids }));
 
 export const useUpdateSalesSettings = () =>
   useConfigMutation((body) => http.put('/sales/config/settings', body).then((d) => d.settings));

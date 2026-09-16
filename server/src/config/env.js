@@ -13,10 +13,18 @@ const envSchema = z.object({
     .transform((v) => v.split(',').map((s) => s.trim()).filter(Boolean)),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   JWT_EXPIRES_IN: z.string().default('7d'),
-  COOKIE_NAME: z.string().default('myportal_token'),
-  SEED_ADMIN_EMAIL: z.string().trim().toLowerCase().pipe(z.email()).default('admin@myportal.com'),
+  COOKIE_NAME: z.string().default('quedesk_token'),
+  SEED_ADMIN_EMAIL: z.string().trim().toLowerCase().pipe(z.email()).default('admin@quedesk.com'),
   SEED_ADMIN_PASSWORD: z.string().min(1).default('Admin@12345'),
   SEED_ADMIN_NAME: z.string().trim().min(1).default('Portal Admin'),
+
+  /**
+   * Cloudinary stores company logos and signatures. Leave these blank to keep
+   * images in MongoDB instead — the app works either way.
+   */
+  CLOUDINARY_CLOUD_NAME: z.string().trim().default(''),
+  CLOUDINARY_API_KEY: z.string().trim().default(''),
+  CLOUDINARY_API_SECRET: z.string().trim().default(''),
 });
 
 const parsed = envSchema.safeParse(process.env);

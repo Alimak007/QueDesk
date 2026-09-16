@@ -1,19 +1,23 @@
-import { FilterX, KanbanSquare, List, Plus, Search, Settings2 } from 'lucide-react';
+import { BriefcaseBusiness, CircleCheck, FilterX, KanbanSquare, List, Plus, Search, Settings2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
-import { Button, Card, ErrorState, Input, PageHeader, Select, Skeleton, Tabs } from '@/components/ui';
+import { Badge, Button, Card, ErrorState, Input, PageHeader, Select, Skeleton, Tabs } from '@/components/ui';
 import { useAuth } from '@/features/auth/useAuth';
+import { usePermissions } from '@/features/auth/usePermissions';
 import { useDirectory } from '@/features/employees/api';
 import { useDebouncedValue, useDocumentTitle, useQueryState, useUrlParam } from '@/hooks';
 import { OPTION_COLORS } from '@/lib/constants';
 import { cn, formatCurrency } from '@/lib/utils';
 import { useSalesConfig, useSalesSummary } from './api';
+import { SYSTEM_TITLE_KEY } from './constants';
 import { KanbanBoard } from './KanbanBoard';
-import { LeadFormModal } from './LeadFormModal';
-import { LeadListView } from './LeadListView';
+import { RecordFormModal } from '@/features/records/RecordFormModal';
+import { useCreateLead, useUpdateLead } from './api';
+import { RecordListView } from '@/features/records/RecordListView';
+import { useLeads } from './api';
 import { LeadSheet } from './LeadSheet';
 
-const DEFAULTS = { view: 'kanban', search: '', owner: '', group: '', page: 1, sortBy: 'createdAt', sortOrder: 'desc' };
+const DEFAULTS = { view: 'kanban', search: '', owner: '', group: '', state: '', page: 1, sortBy: 'createdAt', sortOrder: 'desc' };
 
 function PipelineSummary({ settings }) {
   const { data, isPending } = useSalesSummary();
@@ -59,9 +63,10 @@ function PipelineSummary({ settings }) {
   );
 }
 
-export default function SalesPage() {
-  useDocumentTitle('Sales');
+export default function LeadsPage() {
+  useDocumentTitle('Leads');
   const { isAdmin } = useAuth();
+  const { can } = usePermissions();
   const [filters, setFilters] = useQueryState(DEFAULTS);
   const [searchInput, setSearchInput] = useState(filters.search);
   const debouncedSearch = useDebouncedValue(searchInput, 300);
@@ -75,6 +80,18 @@ export default function SalesPage() {
 
   const [openLead, setOpenLead] = useState(null);
   const [form, setForm] = useState({ open: false, lead: null, defaults: undefined });
+  const createLead = useCreateLead();
+  const updateLead = useUpdateLead();
+  const listQuery = useLeads({
+    search: filters.search,
+    owner: filters.owner,
+    group: filters.group,
+    state: filters.state,
+    page: filters.page,
+    sortBy: filters.sortBy,
+    sortOrder: filters.sortOrder,
+    limit: 15,
+  });
 
   useEffect(() => {
     if (debouncedSearch !== filters.search) setFilters({ search: debouncedSearch });
@@ -87,23 +104,41 @@ export default function SalesPage() {
       defaults: groupValue && groupField ? { [groupField.key]: groupValue } : undefined,
     });
 
-  const hasFilters = Boolean(filters.search || filters.owner || (filters.view === 'list' && filters.group));
+  const hasFilters = Boolean(filters.search || filters.owner || (filters.view === 'list' && (filters.group || filters.state)));
+
+  /** Converted leads leave the board, so the list is where you tell the two apart. */
+  const conversionColumn = {
+    key: 'conversion',
+    label: 'Conversion',
+    render: (lead) =>
+      lead.customer ? (
+        <Badge tone="green">
+          <CircleCheck size={13} aria-hidden /> Converted to Customer
+        </Badge>
+      ) : (
+        <Badge tone="slate" dot>
+          Active
+        </Badge>
+      ),
+  };
 
   return (
     <>
       <PageHeader
-        title="Sales"
+        title="Leads"
         description="Track leads across the pipeline. Every lead is shared with the team."
         actions={
           <>
             {isAdmin && (
-              <Button as={Link} to="/sales/configuration" variant="secondary" leftIcon={Settings2}>
+              <Button as={Link} to="/settings?tab=lead-form" variant="secondary" leftIcon={Settings2}>
                 Configure
               </Button>
             )}
-            <Button leftIcon={Plus} onClick={() => openCreate()}>
-              Add lead
-            </Button>
+            {can('leads', 'create') && (
+              <Button leftIcon={Plus} onClick={() => openCreate()}>
+                Add lead
+              </Button>
+            )}
           </>
         }
       />
@@ -125,7 +160,7 @@ export default function SalesPage() {
                 { value: 'list', label: 'List', icon: List },
               ]}
             />
-            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto_auto]">
               <Input
                 leftIcon={Search}
                 placeholder="Search leads…"
@@ -141,6 +176,18 @@ export default function SalesPage() {
                   </option>
                 ))}
               </Select>
+              {filters.view === 'list' && (
+                <Select
+                  aria-label="Filter by conversion"
+                  value={filters.state}
+                  onChange={(e) => setFilters({ state: e.target.value })}
+                  placeholder="Active & converted"
+                  className="sm:w-44"
+                >
+                  <option value="active">Active only</option>
+                  <option value="converted">Converted only</option>
+                </Select>
+              )}
               {filters.view === 'list' && groupField && (
                 <Select
                   aria-label={`Filter by ${groupField.label}`}
@@ -162,7 +209,7 @@ export default function SalesPage() {
                 disabled={!hasFilters}
                 onClick={() => {
                   setSearchInput('');
-                  setFilters({ search: '', owner: '', group: '' });
+                  setFilters({ search: '', owner: '', group: '', state: '' });
                 }}
               >
                 Clear
@@ -173,12 +220,20 @@ export default function SalesPage() {
           {config.isPending ? (
             <Skeleton className="h-96 w-full rounded-2xl" />
           ) : filters.view === 'list' ? (
-            <LeadListView
+            <RecordListView
+              query={listQuery}
               fields={fields}
               settings={settings}
               filters={filters}
               setFilters={setFilters}
               hasFilters={hasFilters}
+              titleKey={SYSTEM_TITLE_KEY}
+              emptyIcon={BriefcaseBusiness}
+              emptyTitle="No leads yet"
+              emptyDescription="Create the first lead to start building your pipeline."
+              createLabel="Add lead"
+              canCreate={can('leads', 'create')}
+              extraColumns={[conversionColumn]}
               onOpen={setOpenLead}
               onCreate={openCreate}
             />
@@ -199,10 +254,22 @@ export default function SalesPage() {
           setForm({ open: true, lead, defaults: undefined });
         }}
       />
-      <LeadFormModal
+      <RecordFormModal
+        entity="lead"
         open={form.open || action === 'new'}
-        lead={form.lead}
+        record={form.lead}
         defaults={form.defaults}
+        createMutation={createLead}
+        updateMutation={updateLead}
+        labels={{
+          createTitle: 'Add lead',
+          editTitle: 'Edit lead',
+          description: 'Leads are shared with the whole team.',
+          submit: 'Create lead',
+          created: 'Lead created',
+          updated: 'Lead updated',
+          ownerHint: 'The teammate responsible for this lead.',
+        }}
         onOpenChange={(open) => {
           setForm((prev) => ({ ...prev, open }));
           if (!open) setAction(null);

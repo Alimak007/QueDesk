@@ -22,6 +22,7 @@ import {
   Tr,
   UserCell,
 } from '@/components/ui';
+import { usePermissions } from '@/features/auth/usePermissions';
 import { useDebouncedValue, useDocumentTitle, useQueryState } from '@/hooks';
 import { formatDate } from '@/lib/dates';
 import { useDepartments, useEmployees } from './api';
@@ -53,7 +54,8 @@ export function RoleBadge({ role }) {
 }
 
 export default function EmployeesPage() {
-  useDocumentTitle('Employee Management');
+  useDocumentTitle('Employees');
+  const { can } = usePermissions();
   const navigate = useNavigate();
   const [filters, setFilters] = useQueryState(DEFAULTS);
   const [searchInput, setSearchInput] = useState(filters.search);
@@ -83,12 +85,14 @@ export default function EmployeesPage() {
   return (
     <>
       <PageHeader
-        title="Employee Management"
+        title="Employees"
         description="Add team members, manage their details and control portal access."
         actions={
-          <Button leftIcon={Plus} onClick={() => setCreating(true)}>
-            Add employee
-          </Button>
+          can('employees', 'create') && (
+            <Button leftIcon={Plus} onClick={() => setCreating(true)}>
+              Add employee
+            </Button>
+          )
         }
       />
 
@@ -139,7 +143,8 @@ export default function EmployeesPage() {
             title={hasFilters ? 'No employees match your filters' : 'No employees yet'}
             description={hasFilters ? 'Try a different search or clear the filters.' : 'Add your first team member to get started.'}
             action={
-              !hasFilters && (
+              !hasFilters &&
+              can('employees', 'create') && (
                 <Button leftIcon={Plus} onClick={() => setCreating(true)}>
                   Add employee
                 </Button>
@@ -192,23 +197,29 @@ export default function EmployeesPage() {
                           <MenuItem icon={Eye} onSelect={() => navigate(`/employees/${employee.id}`)}>
                             View details
                           </MenuItem>
-                          <MenuItem icon={Pencil} onSelect={() => actions.edit(employee)}>
-                            Edit
-                          </MenuItem>
-                          <MenuItem icon={KeyRound} onSelect={() => actions.resetPassword(employee)}>
-                            Reset password
-                          </MenuItem>
-                          <MenuSeparator />
-                          <MenuItem
-                            icon={employee.status === 'active' ? UserRoundX : UserCheck}
-                            disabled={actions.isSelf(employee)}
-                            onSelect={() => actions.toggleStatus(employee)}
-                          >
-                            {employee.status === 'active' ? 'Deactivate' : 'Reactivate'}
-                          </MenuItem>
-                          <MenuItem icon={Trash2} tone="danger" disabled={actions.isSelf(employee)} onSelect={() => actions.remove(employee)}>
-                            Delete
-                          </MenuItem>
+                          {can('employees', 'edit') && (
+                            <>
+                              <MenuItem icon={Pencil} onSelect={() => actions.edit(employee)}>
+                                Edit
+                              </MenuItem>
+                              <MenuItem icon={KeyRound} onSelect={() => actions.resetPassword(employee)}>
+                                Reset password
+                              </MenuItem>
+                              <MenuSeparator />
+                              <MenuItem
+                                icon={employee.status === 'active' ? UserRoundX : UserCheck}
+                                disabled={actions.isSelf(employee)}
+                                onSelect={() => actions.toggleStatus(employee)}
+                              >
+                                {employee.status === 'active' ? 'Deactivate' : 'Reactivate'}
+                              </MenuItem>
+                            </>
+                          )}
+                          {can('employees', 'delete') && (
+                            <MenuItem icon={Trash2} tone="danger" disabled={actions.isSelf(employee)} onSelect={() => actions.remove(employee)}>
+                              Delete
+                            </MenuItem>
+                          )}
                         </Menu>
                       </div>
                     </Td>

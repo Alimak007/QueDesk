@@ -208,10 +208,7 @@ export function KanbanBoard({ fields, settings, filters, onOpen, onCreate }) {
       { id: lead.id, value: toValue, position },
       {
         onSuccess: () => {
-          if (fromValue !== toValue) {
-            const label = target?.column.label ?? 'Uncategorised';
-            toast.success(`Moved to ${label}`);
-          }
+          if (fromValue !== toValue) toast.success(`Moved to ${target?.column.label ?? 'Uncategorised'}`);
         },
         onError: (err) => toast.error(err.message),
       },

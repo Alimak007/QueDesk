@@ -31,8 +31,9 @@ function DashboardSkeleton() {
 
 export default function DashboardPage() {
   useDocumentTitle('Dashboard');
-  const { user, isAdmin } = useAuth();
+  const { user } = useAuth();
   const { data, isPending, isError, error, refetch } = useDashboard();
+  const isManagerView = data?.view === 'manager';
 
   return (
     <>
@@ -42,7 +43,7 @@ export default function DashboardPage() {
           {greeting()}, {user.firstName} 👋
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          {isAdmin ? 'Here’s what needs your attention across the organisation.' : 'Here’s a snapshot of your day.'}
+          {isManagerView ? 'Here’s what needs your attention across the organisation.' : 'Here’s a snapshot of your day.'}
         </p>
       </div>
 
@@ -52,7 +53,7 @@ export default function DashboardPage() {
         <Card>
           <ErrorState error={error} onRetry={refetch} />
         </Card>
-      ) : isAdmin ? (
+      ) : isManagerView ? (
         <AdminDashboard data={data} />
       ) : (
         <EmployeeDashboard data={data} />

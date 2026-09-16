@@ -22,7 +22,7 @@ export async function getOne(req, res) {
 }
 
 export async function create(req, res) {
-  return created(res, { user: await userService.createUser(req.valid.body) });
+  return created(res, { user: await userService.createUser(req.valid.body, req.user) });
 }
 
 export async function update(req, res) {
@@ -35,7 +35,7 @@ export async function updateStatus(req, res) {
 }
 
 export async function resetPassword(req, res) {
-  await userService.resetPassword(req.valid.params.id, req.valid.body.password);
+  await userService.resetPassword(req.valid.params.id, req.valid.body.password, req.user);
   return ok(res, { reset: true });
 }
 

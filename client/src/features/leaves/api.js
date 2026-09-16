@@ -5,7 +5,7 @@ export const leaveKeys = {
   all: ['leaves'],
   list: (params) => ['leaves', 'list', params],
   detail: (id) => ['leaves', 'detail', id],
-  summary: (year) => ['leaves', 'summary', year],
+  summary: (params) => ['leaves', 'summary', params],
 };
 
 export function useLeaves(params) {
@@ -24,10 +24,10 @@ export function useLeave(id) {
   });
 }
 
-export function useLeaveSummary(year) {
+export function useLeaveSummary(params = {}) {
   return useQuery({
-    queryKey: leaveKeys.summary(year),
-    queryFn: () => http.get('/leaves/summary', cleanParams({ year })),
+    queryKey: leaveKeys.summary(params),
+    queryFn: () => http.get('/leaves/summary', cleanParams(params)),
   });
 }
 

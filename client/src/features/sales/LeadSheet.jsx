@@ -1,30 +1,33 @@
-import { Pencil, Trash2 } from 'lucide-react';
+import { ArrowRight, CircleCheck, UserRoundPlus } from 'lucide-react';
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { toast } from 'sonner';
-import { Button, ConfirmDialog, DescriptionList, Sheet, UserCell } from '@/components/ui';
-import { useAuth } from '@/features/auth/useAuth';
-import { formatDate, timeAgo } from '@/lib/dates';
-import { fullName } from '@/lib/utils';
+import { Badge, Button, ConfirmDialog } from '@/components/ui';
+import { usePermissions } from '@/features/auth/usePermissions';
+import { useConvertLead } from '@/features/customers/api';
+import { RecordSheet } from '@/features/records/RecordSheet';
+import { formatDate } from '@/lib/dates';
 import { useDeleteLead } from './api';
-import { SYSTEM_TITLE_KEY } from './constants';
-import { FieldValue } from './fields';
+import { SYSTEM_STATUS_KEY, SYSTEM_TITLE_KEY } from './constants';
 
 export function LeadSheet({ lead, fields, settings, open, onOpenChange, onEdit }) {
-  const { isAdmin } = useAuth();
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const remove = useDeleteLead();
+  const { can } = usePermissions();
+  const deleteLead = useDeleteLead();
+  const convertLead = useConvertLead();
+  const [confirmConvert, setConfirmConvert] = useState(false);
 
   if (!lead) return null;
-  const groupField = fields.find((f) => f.key === settings?.kanbanGroupField);
-  const title = lead.data?.[SYSTEM_TITLE_KEY] || 'Untitled lead';
-  const detailFields = fields.filter((f) => f.key !== SYSTEM_TITLE_KEY);
 
-  const handleDelete = async () => {
+  const converted = Boolean(lead.customer);
+  const canConvert = can('customers', 'create') && !converted;
+
+  const convert = async () => {
     try {
-      await remove.mutateAsync(lead.id);
-      toast.success('Lead deleted');
-      setConfirmDelete(false);
-      onOpenChange(false);
+      const result = await convertLead.mutateAsync(lead.id);
+      setConfirmConvert(false);
+      toast.success(result.created ? 'Lead converted to a customer' : 'This lead is already a customer', {
+        description: result.created ? 'You can find it in the Customers module.' : undefined,
+      });
     } catch (err) {
       toast.error(err.message);
     }
@@ -32,70 +35,61 @@ export function LeadSheet({ lead, fields, settings, open, onOpenChange, onEdit }
 
   return (
     <>
-      <Sheet
+      <RecordSheet
+        record={lead}
+        fields={fields}
+        settings={settings}
         open={open}
         onOpenChange={onOpenChange}
-        title={title}
-        description={lead.data?.company || undefined}
-        footer={
-          <>
-            {isAdmin && (
-              <Button variant="danger-soft" leftIcon={Trash2} className="mr-auto" onClick={() => setConfirmDelete(true)}>
-                Delete
-              </Button>
-            )}
-            <Button leftIcon={Pencil} onClick={() => onEdit(lead)}>
-              Edit lead
+        onEdit={onEdit}
+        titleKey={SYSTEM_TITLE_KEY}
+        statusKey={SYSTEM_STATUS_KEY}
+        canEdit={can('leads', 'edit') && !converted}
+        canDelete={can('leads', 'delete')}
+        deleteMutation={deleteLead}
+        deleteLabel="Delete lead"
+        headerActions={
+          canConvert && (
+            <Button variant="secondary" leftIcon={UserRoundPlus} onClick={() => setConfirmConvert(true)}>
+              Convert to customer
             </Button>
-          </>
+          )
         }
       >
-        <div className="space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-4">
+        {converted && (
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-100">
             <div>
-              <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">Owner</p>
-              <UserCell user={lead.owner} />
-            </div>
-            {groupField && (
-              <div className="text-right">
-                <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate-400">{groupField.label}</p>
-                <FieldValue field={groupField} value={lead.data?.[groupField.key]} />
-              </div>
-            )}
-          </div>
-
-          <DescriptionList
-            items={detailFields
-              .filter((f) => f.key !== groupField?.key)
-              .map((field) => ({
-                label: field.label,
-                value: <FieldValue field={field} value={lead.data?.[field.key]} currency={settings?.currency} />,
-                full: field.type === 'textarea',
-              }))}
-          />
-
-          <div className="space-y-1 border-t border-slate-100 pt-4 text-xs text-slate-500">
-            <p>
-              Created by {fullName(lead.createdBy) || 'unknown'} on {formatDate(lead.createdAt, 'd MMM yyyy, h:mm a')}
-            </p>
-            {lead.updatedBy && (
-              <p>
-                Last updated by {fullName(lead.updatedBy)} {timeAgo(lead.updatedAt)}
+              <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-900">
+                <CircleCheck size={15} /> Converted to a customer
               </p>
+              <p className="mt-0.5 text-xs text-emerald-800/80">
+                {lead.convertedAt ? `On ${formatDate(lead.convertedAt, 'd MMM yyyy')}. ` : ''}
+                This lead is now read-only and no longer appears on the board — edit the customer instead.
+              </p>
+            </div>
+            {can('customers', 'view') && (
+              <Button as={Link} to={`/customers?customer=${lead.customer.id ?? lead.customer}`} variant="ghost" size="sm" rightIcon={ArrowRight}>
+                Open
+              </Button>
             )}
           </div>
-        </div>
-      </Sheet>
+        )}
+      </RecordSheet>
 
       <ConfirmDialog
-        open={confirmDelete}
-        onOpenChange={setConfirmDelete}
-        title="Delete this lead?"
-        description={`“${title}” will be permanently removed for everyone. This cannot be undone.`}
-        confirmLabel="Delete lead"
-        loading={remove.isPending}
-        onConfirm={handleDelete}
-      />
+        open={confirmConvert}
+        onOpenChange={setConfirmConvert}
+        tone="primary"
+        title="Convert this lead into a customer?"
+        description="A customer record will be created with this lead's details. The lead leaves the board and stays in the list, marked as converted."
+        confirmLabel="Convert to customer"
+        loading={convertLead.isPending}
+        onConfirm={convert}
+      >
+        <p className="mt-3 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 ring-1 ring-slate-200">
+          <Badge tone="violet">Once only</Badge> Converting again will simply open the existing customer.
+        </p>
+      </ConfirmDialog>
     </>
   );
 }

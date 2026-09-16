@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ROLES, USER_STATUS } from '../../constants/index.js';
 import { paginationQuery } from '../../utils/pagination.js';
-import { dateOnly, optionalTrimmed, passwordSchema, trimmed } from '../../utils/validators.js';
+import { dateOnly, objectId, optionalTrimmed, passwordSchema, trimmed } from '../../utils/validators.js';
 
 const email = z.string().trim().toLowerCase().pipe(z.email('Enter a valid email address'));
 
@@ -19,6 +19,7 @@ const baseFields = {
   designation: optionalTrimmed('Designation', 80),
   joiningDate: dateOnly('Joining date').nullable().optional(),
   role: z.enum(Object.values(ROLES)).optional(),
+  company: objectId('company').nullable().optional(),
 };
 
 export const createUserSchema = z.object({
@@ -61,6 +62,7 @@ export const listUsersQuery = z.object({
   department: z.string().trim().max(80).optional(),
   role: z.enum(Object.values(ROLES)).optional(),
   status: z.enum(Object.values(USER_STATUS)).optional(),
+  company: objectId('company').optional(),
   sortBy: z.enum(['firstName', 'employeeId', 'joiningDate', 'createdAt', 'department']).default('firstName'),
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
 });

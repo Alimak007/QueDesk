@@ -1,12 +1,18 @@
 /**
  * Usage:
- *   npm run seed         Creates the first admin account and the default Sales form.
- *   npm run seed:demo    Additionally loads demo employees, leaves, reports, events and leads.
+ *   npm run seed            Creates the first admin account and the default Lead/Customer forms.
+ *                           It never creates business data.
+ *   npm run seed:companies  Additionally adds the two company profiles from the supplied
+ *                           invoice and payslip templates (optional convenience).
+ *   npm run seed:demo       Loads demo employees, leave, reports, events and leads for a
+ *                           throwaway environment. Do not run this against real data.
  *
  * Both modes are idempotent: existing data is never overwritten.
  */
 import { env } from '../config/env.js';
 import { connectDatabase, disconnectDatabase } from '../config/db.js';
+import { runMigrations } from '../config/migrations.js';
+import '../models.js';
 import { LEAVE_STATUS, ROLES } from '../constants/index.js';
 import { addDays, isWeekend, todayDateOnly } from '../utils/dates.js';
 import { logger } from '../utils/logger.js';
@@ -15,8 +21,10 @@ import { Event } from '../modules/events/event.model.js';
 import { Leave } from '../modules/leaves/leave.model.js';
 import { calculateLeaveDays } from '../modules/leaves/leave.service.js';
 import { Lead } from '../modules/sales/lead.model.js';
-import { buildSearchText } from '../modules/sales/leadData.js';
-import { ensureDefaultSalesFields, listActiveFields } from '../modules/sales/salesField.service.js';
+import { buildSearchText } from '../modules/sales/recordData.js';
+import { listActiveFields } from '../modules/sales/salesField.service.js';
+import { Company } from '../modules/companies/company.model.js';
+import { DEFAULT_COMPANIES } from './defaultCompanies.js';
 import { User } from '../modules/users/user.model.js';
 import { createUser } from '../modules/users/user.service.js';
 import { passwordSchema } from '../utils/validators.js';
@@ -34,7 +42,18 @@ async function nextAdminEmployeeId() {
  * Ensures the account in SEED_ADMIN_EMAIL exists as an active admin.
  * An existing account keeps its password and details; it is only promoted/reactivated if needed.
  */
-async function ensureAdmin() {
+/** Creates the company profiles used on payslips and invoices. */
+async function ensureCompanies() {
+  if (await Company.exists({})) {
+    logger.info('Companies already exist — skipping');
+    return Company.find().sort({ isDefault: -1 });
+  }
+  const created = await Company.insertMany(DEFAULT_COMPANIES);
+  logger.info(`Created ${created.length} company profiles`);
+  return created;
+}
+
+async function ensureAdmin(companies = []) {
   const existing = await User.findOne({ email: env.SEED_ADMIN_EMAIL });
   if (existing) {
     if (existing.role !== ROLES.ADMIN || existing.status !== 'active') {
@@ -54,7 +73,8 @@ async function ensureAdmin() {
     logger.warn('SEED_ADMIN_PASSWORD is weaker than the portal password policy (8+ characters with a letter and a number). Change it after signing in.');
   }
 
-  const [firstName, ...rest] = env.SEED_ADMIN_NAME.split(/s+/);
+  const [firstName, ...rest] = env.SEED_ADMIN_NAME.trim().split(/\s+/);
+  const employer = companies.find((c) => c.currency === 'INR') ?? companies[0];
   const admin = await createUser({
     firstName,
     lastName: rest.join(' '),
@@ -63,18 +83,19 @@ async function ensureAdmin() {
     role: ROLES.ADMIN,
     designation: 'Administrator',
     employeeId: await nextAdminEmployeeId(),
+    company: employer?._id ?? null,
   });
   logger.info(`Created admin: ${admin.email} (${admin.employeeId})`);
   return admin;
 }
 
 const DEMO_EMPLOYEES = [
-  { firstName: 'Aarav', lastName: 'Sharma', email: 'aarav@myportal.com', department: 'Engineering', designation: 'Senior Software Engineer', phone: '+91 98200 11001', joiningDate: '2022-04-11' },
-  { firstName: 'Priya', lastName: 'Nair', email: 'priya@myportal.com', department: 'Engineering', designation: 'Frontend Developer', phone: '+91 98200 11002', joiningDate: '2023-01-16' },
-  { firstName: 'Rohan', lastName: 'Mehta', email: 'rohan@myportal.com', department: 'Sales', designation: 'Business Development Manager', phone: '+91 98200 11003', joiningDate: '2021-08-02' },
-  { firstName: 'Sara', lastName: 'Khan', email: 'sara@myportal.com', department: 'Sales', designation: 'Account Executive', phone: '+91 98200 11004', joiningDate: '2024-02-19' },
-  { firstName: 'Vikram', lastName: 'Iyer', email: 'vikram@myportal.com', department: 'Design', designation: 'Product Designer', phone: '+91 98200 11005', joiningDate: '2023-06-05' },
-  { firstName: 'Neha', lastName: 'Gupta', email: 'neha@myportal.com', department: 'Operations', designation: 'HR & Operations Lead', phone: '+91 98200 11006', joiningDate: '2022-10-03' },
+  { firstName: 'Aarav', lastName: 'Sharma', email: 'aarav@quedesk.com', department: 'Engineering', designation: 'Senior Software Engineer', phone: '+91 98200 11001', joiningDate: '2022-04-11' },
+  { firstName: 'Priya', lastName: 'Nair', email: 'priya@quedesk.com', department: 'Engineering', designation: 'Frontend Developer', phone: '+91 98200 11002', joiningDate: '2023-01-16' },
+  { firstName: 'Rohan', lastName: 'Mehta', email: 'rohan@quedesk.com', department: 'Sales', designation: 'Business Development Manager', phone: '+91 98200 11003', joiningDate: '2021-08-02' },
+  { firstName: 'Sara', lastName: 'Khan', email: 'sara@quedesk.com', department: 'Sales', designation: 'Account Executive', phone: '+91 98200 11004', joiningDate: '2024-02-19' },
+  { firstName: 'Vikram', lastName: 'Iyer', email: 'vikram@quedesk.com', department: 'Design', designation: 'Product Designer', phone: '+91 98200 11005', joiningDate: '2023-06-05' },
+  { firstName: 'Neha', lastName: 'Gupta', email: 'neha@quedesk.com', department: 'Operations', designation: 'HR & Operations Lead', phone: '+91 98200 11006', joiningDate: '2022-10-03' },
 ];
 
 async function seedDemo(admin) {
@@ -202,8 +223,12 @@ async function seedDemo(admin) {
 
 async function main() {
   await connectDatabase();
-  await ensureDefaultSalesFields();
-  const admin = await ensureAdmin();
+  await runMigrations();
+
+  // Company profiles are opt-in: `npm run seed` never invents business data.
+  const companies = process.argv.includes('--companies') ? await ensureCompanies() : await Company.find();
+  const admin = await ensureAdmin(companies);
+
   if (process.argv.includes('--demo')) await seedDemo(admin);
   logger.info('Seeding complete');
 }

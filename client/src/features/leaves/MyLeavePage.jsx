@@ -1,6 +1,7 @@
 import { CalendarCheck2, CircleCheck, Hourglass, Plane, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, SkeletonRows, StatCard, Table, Tabs, Td, Th, THead, Tr } from '@/components/ui';
+import { usePermissions } from '@/features/auth/usePermissions';
 import { useDocumentTitle, useQueryState, useUrlParam } from '@/hooks';
 import { LEAVE_STATUSES, LEAVE_TYPES } from '@/lib/constants';
 import { formatDate, formatDateRange } from '@/lib/dates';
@@ -10,8 +11,10 @@ import { formatLeaveDays } from './utils';
 import { LeaveDetailsSheet } from './LeaveDetailsSheet';
 import { LeaveFormModal } from './LeaveFormModal';
 
-export default function MyLeavePage() {
-  useDocumentTitle('My Leave');
+export default function MyLeavePage({ embedded = false }) {
+  useDocumentTitle(embedded ? undefined : 'My Leave');
+  const { can } = usePermissions();
+  const canApply = can('leave', 'create');
   const [filters, setFilters] = useQueryState({ status: '', page: 1 });
   const [action, setAction] = useUrlParam('action');
   const [detailsId, setDetailsId] = useUrlParam('leave');
@@ -19,23 +22,36 @@ export default function MyLeavePage() {
   // `?action=new` (dashboard quick action) opens the form directly.
   const formOpen = formState.open || action === 'new';
 
-  const { data, isPending, isError, error, refetch } = useLeaves({ ...filters, limit: 10 });
-  const summary = useLeaveSummary();
+  // `scope: mine` keeps this view personal even for approvers, who otherwise see everyone.
+  const { data, isPending, isError, error, refetch } = useLeaves({ ...filters, scope: 'mine', limit: 10 });
+  const summary = useLeaveSummary({ scope: 'mine' });
 
   const s = summary.data;
   const byStatus = s?.byStatus ?? {};
 
   return (
     <>
-      <PageHeader
-        title="My Leave"
-        description="Apply for leave and track the status of your requests."
-        actions={
-          <Button leftIcon={Plus} onClick={() => setFormState({ open: true, leave: null })}>
-            Apply leave
-          </Button>
-        }
-      />
+      {embedded ? (
+        canApply && (
+          <div className="mb-4 flex justify-end">
+            <Button leftIcon={Plus} onClick={() => setFormState({ open: true, leave: null })}>
+              Apply leave
+            </Button>
+          </div>
+        )
+      ) : (
+        <PageHeader
+          title="My Leave"
+          description="Apply for leave and track the status of your requests."
+          actions={
+            canApply && (
+              <Button leftIcon={Plus} onClick={() => setFormState({ open: true, leave: null })}>
+                Apply leave
+              </Button>
+            )
+          }
+        />
+      )}
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -81,9 +97,11 @@ export default function MyLeavePage() {
             title={filters.status ? 'No leave requests with this status' : 'No leave requests yet'}
             description="When you apply for leave, your requests and their status will appear here."
             action={
-              <Button leftIcon={Plus} onClick={() => setFormState({ open: true, leave: null })}>
-                Apply leave
-              </Button>
+              canApply && (
+                <Button leftIcon={Plus} onClick={() => setFormState({ open: true, leave: null })}>
+                  Apply leave
+                </Button>
+              )
             }
           />
         ) : (

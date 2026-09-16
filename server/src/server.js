@@ -1,16 +1,17 @@
 import { env } from './config/env.js';
 import { connectDatabase, disconnectDatabase } from './config/db.js';
+import { runMigrations } from './config/migrations.js';
 import { createApp } from './app.js';
-import { ensureDefaultSalesFields } from './modules/sales/salesField.service.js';
+import './models.js';
 import { logger } from './utils/logger.js';
 
 async function bootstrap() {
   await connectDatabase();
-  await ensureDefaultSalesFields();
+  await runMigrations();
 
   const app = createApp();
   const server = app.listen(env.PORT, () => {
-    logger.info(`My Portal API listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
+    logger.info(`QueDesk API listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
   });
 
   const shutdown = (signal) => {

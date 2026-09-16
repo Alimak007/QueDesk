@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router';
 import { FullPageLoader } from '@/components/layout/FullPageLoader';
+import { canAccessModule, can } from '@/lib/permissions';
 import { useAuth } from './useAuth';
 
 /** Renders child routes only for signed-in users. */
@@ -15,12 +16,19 @@ export function RequireAuth() {
 }
 
 /**
- * Restricts child routes to specific roles. This is a UX convenience only —
- * the API independently enforces every permission.
+ * Restricts child routes to a module (optionally to specific actions), so a
+ * user cannot reach a page by typing its URL. The API enforces the same rules.
  */
-export function RequireRole({ roles }) {
+export function RequirePermission({ module, actions }) {
   const { user } = useAuth();
-  if (!roles.includes(user?.role)) return <Navigate to="/" replace />;
+  const allowed = actions?.length ? can(user, module, ...actions) : canAccessModule(user, module);
+  if (!allowed) return <Navigate to="/" replace />;
+  return <Outlet />;
+}
+
+export function RequireAdmin() {
+  const { isAdmin } = useAuth();
+  if (!isAdmin) return <Navigate to="/" replace />;
   return <Outlet />;
 }
 
@@ -30,4 +38,10 @@ export function GuestOnly() {
   if (isLoading) return <FullPageLoader />;
   if (isAuthenticated) return <Navigate to={location.state?.from || '/'} replace />;
   return <Outlet />;
+}
+
+/** Keeps old bookmarks working after the navigation restructure. */
+export function RedirectTo({ to }) {
+  const { search, hash } = useLocation();
+  return <Navigate to={`${to}${search}${hash}`} replace />;
 }

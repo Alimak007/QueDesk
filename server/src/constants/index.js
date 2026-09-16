@@ -40,6 +40,28 @@ export const SYSTEM_SALES_FIELDS = Object.freeze({
   STATUS: 'leadStatus',
 });
 
+/** Record types that share the configurable-field engine. */
+export const FIELD_ENTITIES = Object.freeze(['lead', 'customer']);
+
+export const SYSTEM_CUSTOMER_FIELDS = Object.freeze({
+  TITLE: 'customerName',
+  STATUS: 'customerStatus',
+});
+
+/** System (non-removable) field keys per entity. */
+export const SYSTEM_FIELD_KEYS = Object.freeze({
+  lead: Object.values(SYSTEM_SALES_FIELDS),
+  customer: Object.values(SYSTEM_CUSTOMER_FIELDS),
+});
+
+export const TITLE_FIELD_KEY = Object.freeze({
+  lead: SYSTEM_SALES_FIELDS.TITLE,
+  customer: SYSTEM_CUSTOMER_FIELDS.TITLE,
+});
+
+/** Default lead stage that turns a lead into a customer. */
+export const CUSTOMER_STAGE_VALUE = 'customer';
+
 export const NOTIFICATION_TYPES = Object.freeze({
   LEAVE_SUBMITTED: 'leave_submitted',
   LEAVE_APPROVED: 'leave_approved',
