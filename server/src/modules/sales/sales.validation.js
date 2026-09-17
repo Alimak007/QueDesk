@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SALES_FIELD_TYPES } from '../../constants/index.js';
+import { FIELD_ENTITIES, SALES_FIELD_TYPES } from '../../constants/index.js';
 import { paginationQuery } from '../../utils/pagination.js';
 import { objectId, optionalTrimmed, trimmed } from '../../utils/validators.js';
 
@@ -48,6 +48,7 @@ export const createFieldSchema = z
       .regex(FIELD_KEY_REGEX, 'Key must start with a lowercase letter and contain only letters and numbers')
       .optional(),
     type: z.enum(SALES_FIELD_TYPES, { error: 'Select a valid field type' }),
+    entity: z.enum(FIELD_ENTITIES).default('lead'),
   })
   .superRefine((v, ctx) => {
     refineOptions(v, ctx);
@@ -62,6 +63,12 @@ export const updateFieldSchema = z
 
 export const reorderFieldsSchema = z.object({
   ids: z.array(objectId('field id')).min(1).max(200),
+  entity: z.enum(FIELD_ENTITIES).default('lead'),
+});
+
+export const configQuery = z.object({
+  entity: z.enum(FIELD_ENTITIES).default('lead'),
+  includeArchived: z.enum(['true', 'false']).optional(),
 });
 
 export const salesSettingsSchema = z.object({
@@ -75,16 +82,16 @@ export const salesSettingsSchema = z.object({
     .optional(),
 });
 
-const leadData = z.record(z.string().regex(FIELD_KEY_REGEX), z.unknown(), { error: 'Lead data must be an object' });
+export const recordData = z.record(z.string().regex(FIELD_KEY_REGEX), z.unknown(), { error: 'Record data must be an object' });
 
 export const createLeadSchema = z.object({
-  data: leadData,
+  data: recordData,
   owner: objectId('owner').optional(),
 });
 
 export const updateLeadSchema = z
   .object({
-    data: leadData.optional(),
+    data: recordData.optional(),
     owner: objectId('owner').optional(),
   })
   .refine((v) => v.data || v.owner, { message: 'Nothing to update' });
@@ -99,6 +106,8 @@ export const listLeadsQuery = z.object({
   search: z.string().trim().max(100).optional(),
   owner: objectId('owner').optional(),
   group: z.string().trim().max(60).optional(),
+  /** Active leads are still in the pipeline; converted ones became customers. */
+  state: z.enum(['active', 'converted']).optional(),
   sortBy: z.string().regex(/^(createdAt|updatedAt|data\.[a-z][a-zA-Z0-9]{0,39})$/).default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
 });

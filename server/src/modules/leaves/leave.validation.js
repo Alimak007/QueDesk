@@ -54,9 +54,18 @@ export const listLeavesQuery = z
     to: dateOnly('To date').optional(),
     sortBy: z.enum(['startDate', 'createdAt', 'status']).default('createdAt'),
     sortOrder: z.enum(['asc', 'desc']).default('desc'),
+    /** Approvers can ask for only their own leave. */
+    scope: z.enum(['mine', 'all']).optional(),
   })
   .refine((v) => !v.from || !v.to || v.to >= v.from, { path: ['to'], message: '"to" must not be before "from"' });
 
 export const summaryQuery = z.object({
   year: z.coerce.number().int().min(2000).max(2100).optional(),
+  scope: z.enum(['mine', 'all']).optional(),
+});
+
+export const balancesQuery = z.object({
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
+  /** Omitted means the signed-in employee; another id needs the approve permission. */
+  employee: objectId('employee').optional(),
 });

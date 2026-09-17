@@ -9,11 +9,24 @@ import { AUTH_QUERY_KEY, AuthContext } from './authContext';
 export function AuthProvider({ children }) {
   const queryClient = useQueryClient();
 
-  const { data: user, isPending } = useQuery({
+  /**
+   * The session probe answers 200 with `user: null` when nobody is signed in,
+   * so an *error* here never means "signed out" — it means we could not ask.
+   * Those two must stay apart: treating a failed check as a sign-out is what
+   * throws a perfectly valid session onto the login page.
+   */
+  const {
+    data: user,
+    isPending,
+    isError: sessionUnavailable,
+    error: sessionError,
+    refetch: retrySession,
+  } = useQuery({
     queryKey: AUTH_QUERY_KEY,
     queryFn: authApi.session,
     staleTime: 5 * 60 * 1000,
-    retry: 2,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
   });
 
   /**
@@ -68,11 +81,15 @@ export function AuthProvider({ children }) {
       isLoading: isPending,
       isAuthenticated: Boolean(user),
       isAdmin: user?.role === ROLES.ADMIN,
+      /** The check itself failed; the visitor may well still be signed in. */
+      sessionUnavailable,
+      sessionError,
+      retrySession,
       login,
       logout,
       setUser,
     }),
-    [user, isPending, login, logout, setUser],
+    [user, isPending, sessionUnavailable, sessionError, retrySession, login, logout, setUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

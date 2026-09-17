@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, ClipboardList, Hourglass, Palmtree, Plane, TrendingUp, UserCheck, Users } from 'lucide-react';
+import { BriefcaseBusiness, ClipboardList, FileText, Hourglass, Palmtree, Plane, ReceiptText, TrendingUp, UserCheck, Users, UsersRound } from 'lucide-react';
 import { Link } from 'react-router';
 import { Avatar, Badge, Card, CardHeader, EmptyState, StatCard, UserCell } from '@/components/ui';
 import { LeaveTypeLabel } from '@/features/leaves/components';
@@ -8,13 +8,14 @@ import { formatCurrency, fullName, truncate } from '@/lib/utils';
 import { PipelineBars, UpcomingEventsCard, ViewAll } from './widgets';
 
 export function AdminDashboard({ data }) {
-  const { employees, leave, dailyStatus, sales } = data;
-  const expected = Math.max(dailyStatus.total - dailyStatus.onLeave, 0);
+  const { employees, leave, dailyStatus, sales, finance, customers, payslips } = data;
+  const expected = dailyStatus ? Math.max(dailyStatus.total - dailyStatus.onLeave, 0) : 0;
   const completion = expected ? Math.round((dailyStatus.submitted / expected) * 100) : 0;
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {employees && (
         <StatCard
           label="Active employees"
           value={employees.active}
@@ -23,6 +24,8 @@ export function AdminDashboard({ data }) {
           to="/employees"
           hint={employees.inactive ? `${employees.inactive} inactive` : 'All accounts active'}
         />
+        )}
+        {leave && (
         <StatCard
           label="Pending leave requests"
           value={leave.pendingCount}
@@ -36,6 +39,8 @@ export function AdminDashboard({ data }) {
             </span>
           }
         />
+        )}
+        {dailyStatus && (
         <StatCard
           label="Status reports today"
           value={`${dailyStatus.submitted}/${expected}`}
@@ -51,24 +56,43 @@ export function AdminDashboard({ data }) {
             </div>
           }
         />
-        <StatCard
-          label="Pipeline value"
-          value={formatCurrency(sales.totalValue, sales.currency, { compact: true })}
-          icon={TrendingUp}
-          tone="violet"
-          to="/sales"
-          hint={`${sales.totalLeads} leads in pipeline`}
-        />
+        )}
+        {sales && (
+          <StatCard
+            label="Pipeline value"
+            value={formatCurrency(sales.totalValue, sales.currency, { compact: true })}
+            icon={TrendingUp}
+            tone="violet"
+            to="/leads"
+            hint={`${sales.totalLeads} leads in pipeline`}
+          />
+        )}
+        {finance && (
+          <StatCard
+            label="Outstanding invoices"
+            value={formatCurrency(finance.outstanding, sales?.currency ?? 'AED', { compact: true })}
+            icon={ReceiptText}
+            tone="amber"
+            to="/invoices"
+            hint={`${finance.count} invoices · ${formatCurrency(finance.paid, sales?.currency ?? 'AED', { compact: true })} paid`}
+          />
+        )}
+        {customers && (
+          <StatCard label="Customers" value={customers.total} icon={UsersRound} tone="green" to="/customers" hint="Converted and direct" />
+        )}
+        {payslips && (
+          <StatCard label="Payslips issued" value={payslips.total} icon={FileText} tone="slate" to="/payslips" hint="All time" />
+        )}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3">
-        {/* Needs attention */}
+        {leave && (
         <Card className="xl:col-span-2">
           <CardHeader
             icon={Plane}
             title="Leave requests awaiting review"
             description={leave.pendingCount ? `${leave.pendingCount} pending` : 'Nothing waiting on you'}
-            action={<ViewAll to="/leave-management" />}
+            action={<ViewAll to="/leave" />}
           />
           {leave.pending.length === 0 ? (
             <EmptyState compact icon={Plane} title="All caught up" description="New leave requests will appear here for review." />
@@ -77,7 +101,7 @@ export function AdminDashboard({ data }) {
               {leave.pending.map((item) => (
                 <li key={item.id}>
                   <Link
-                    to={`/leave-management?leave=${item.id}`}
+                    to={`/leave?tab=team&leave=${item.id}`}
                     className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-5 py-3 transition-colors hover:bg-slate-50 md:grid-cols-[minmax(0,1.2fr)_9rem_minmax(0,1fr)_auto]"
                   >
                     <div className="min-w-0">
@@ -101,7 +125,9 @@ export function AdminDashboard({ data }) {
             </ul>
           )}
         </Card>
+        )}
 
+        {leave && (
         <Card>
           <CardHeader icon={Palmtree} title="On leave today" description={`${leave.onLeaveToday.length} ${leave.onLeaveToday.length === 1 ? 'person' : 'people'}`} />
           {leave.onLeaveToday.length === 0 ? (
@@ -117,9 +143,11 @@ export function AdminDashboard({ data }) {
             </ul>
           )}
         </Card>
+        )}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3">
+        {dailyStatus && (
         <Card className="xl:col-span-2">
           <CardHeader icon={ClipboardList} title="Latest status reports" description="What the team has been working on" action={<ViewAll to="/daily-status?view=reports" />} />
           {dailyStatus.recent.length === 0 ? (
@@ -143,20 +171,22 @@ export function AdminDashboard({ data }) {
             </ul>
           )}
         </Card>
+        )}
 
-        <UpcomingEventsCard events={data.upcomingEvents} />
+        {data.upcomingEvents && <UpcomingEventsCard events={data.upcomingEvents} />}
       </div>
 
+      {sales && (
       <div className="grid gap-6 xl:grid-cols-3">
         <Card>
-          <CardHeader icon={TrendingUp} title="Pipeline by stage" description={`${sales.totalLeads} leads · ${formatCurrency(sales.totalValue, sales.currency, { compact: true })}`} action={<ViewAll to="/sales" />} />
+          <CardHeader icon={TrendingUp} title="Pipeline by stage" description={`${sales.totalLeads} leads · ${formatCurrency(sales.totalValue, sales.currency, { compact: true })}`} action={<ViewAll to="/leads" />} />
           <div className="px-5 pb-5">
             <PipelineBars sales={sales} />
           </div>
         </Card>
 
         <Card className="xl:col-span-2">
-          <CardHeader icon={BriefcaseBusiness} title="Recent leads" action={<ViewAll to="/sales?view=list" />} />
+          <CardHeader icon={BriefcaseBusiness} title="Recent leads" action={<ViewAll to="/leads?view=list" />} />
           {sales.recentLeads.length === 0 ? (
             <EmptyState compact icon={BriefcaseBusiness} title="No leads yet" />
           ) : (
@@ -181,6 +211,7 @@ export function AdminDashboard({ data }) {
           )}
         </Card>
       </div>
+      )}
     </div>
   );
 }

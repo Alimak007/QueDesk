@@ -12,6 +12,9 @@ const leadSchema = new mongoose.Schema(
     searchText: { type: String, default: '', select: false },
     /** Manual ordering inside a Kanban column. */
     position: { type: Number, default: 0 },
+    /** Set once the lead has been converted into a customer. */
+    customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null },
+    convertedAt: { type: Date, default: null },
   },
   { timestamps: true, minimize: false },
 );

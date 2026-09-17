@@ -1,4 +1,6 @@
+import { ApiError } from '../../utils/ApiError.js';
 import { created, ok } from '../../utils/response.js';
+import { canManage } from '../../utils/scope.js';
 import * as leaveService from './leave.service.js';
 
 export async function list(req, res) {
@@ -7,6 +9,16 @@ export async function list(req, res) {
 
 export async function summary(req, res) {
   return ok(res, await leaveService.getLeaveSummary(req.user, req.valid.query));
+}
+
+/** Own balances by default; another employee's needs permission to approve leave. */
+export async function balances(req, res) {
+  const { employee, ...options } = req.valid.query;
+  const target = employee ?? req.user._id.toString();
+  if (target !== req.user._id.toString() && !canManage(req.user, 'leave', 'approve')) {
+    throw ApiError.forbidden("You can only see your own leave balance");
+  }
+  return ok(res, await leaveService.getLeaveBalances(target, options));
 }
 
 export async function preview(req, res) {

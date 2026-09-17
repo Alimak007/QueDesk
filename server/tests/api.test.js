@@ -3,7 +3,8 @@
  * data privacy (§6.3, §7.3, §13), role-based access (§15), the dynamic Sales
  * form (§11) and employee deletion (§17 rule 8).
  *
- * Runs against a throwaway database (`<MONGODB_DB_NAME>_test`) that is dropped afterwards.
+ * Runs against a disposable in-memory MongoDB: no network, no credentials,
+ * and no chance of touching real data.
  */
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
@@ -12,13 +13,12 @@ process.env.NODE_ENV = 'test';
 
 const { default: mongoose } = await import('mongoose');
 const { default: request } = await import('supertest');
-const { env } = await import('../src/config/env.js');
-const { connectDatabase } = await import('../src/config/db.js');
+const { startTestDatabase, stopTestDatabase } = await import('./helpers.js');
 const { createApp } = await import('../src/app.js');
-const { ensureDefaultSalesFields } = await import('../src/modules/sales/salesField.service.js');
+const { runMigrations } = await import('../src/config/migrations.js');
+await import('../src/models.js');
 const { createUser } = await import('../src/modules/users/user.service.js');
 
-const TEST_DB = `${env.MONGODB_DB_NAME}_test`;
 const PASSWORD = 'Passw0rd!';
 
 let app;
@@ -39,6 +39,19 @@ function nextSaturday() {
   return d.toISOString().slice(0, 10);
 }
 
+/** A Thursday far enough ahead not to clash with the other fixtures. */
+function nextThursday() {
+  const d = new Date();
+  d.setDate(d.getDate() + 60 + ((4 - ((d.getDay() + 60) % 7) + 7) % 7));
+  return d.toISOString().slice(0, 10);
+}
+
+function addDays(dateOnly, days) {
+  const d = new Date(`${dateOnly}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 async function signIn(email) {
   const agent = request.agent(app);
   const res = await agent.post('/api/auth/login').send({ email, password: PASSWORD });
@@ -47,9 +60,8 @@ async function signIn(email) {
 }
 
 before(async () => {
-  await connectDatabase(TEST_DB);
-  await mongoose.connection.dropDatabase();
-  await ensureDefaultSalesFields();
+  await startTestDatabase();
+  await runMigrations();
   app = createApp();
 
   const admin = await createUser({ firstName: 'Ada', lastName: 'Admin', email: 'admin@test.io', password: PASSWORD, role: 'admin' });
@@ -63,8 +75,7 @@ before(async () => {
 });
 
 after(async () => {
-  await mongoose.connection.dropDatabase();
-  await mongoose.disconnect();
+  await stopTestDatabase();
 });
 
 describe('authentication', () => {
@@ -99,7 +110,7 @@ describe('authentication', () => {
 describe('leave privacy and workflow', () => {
   let aliceLeave;
 
-  test('employee applies for leave; weekends are excluded from the day count', async () => {
+  test('employee applies for leave; a single day counts as one', async () => {
     const res = await agents.alice.post('/api/leaves').send({
       type: 'casual',
       startDate: workday(14),
@@ -112,10 +123,63 @@ describe('leave privacy and workflow', () => {
     aliceLeave = res.body.data.leave;
   });
 
-  test('a request that only covers a weekend is rejected', async () => {
+  test('Saturdays and Sundays are not counted', async () => {
+    // Thursday to Monday spans five dates but only three working days.
+    const thursday = nextThursday();
+    const res = await agents.bob.post('/api/leaves').send({
+      type: 'sick',
+      startDate: thursday,
+      endDate: addDays(thursday, 4),
+      reason: 'Unwell',
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.data.leave.days, 3, 'Thu, Fri and Mon count; Sat and Sun do not');
+    await agents.bob.delete(`/api/leaves/${res.body.data.leave.id}`);
+  });
+
+  test('a company holiday still counts as leave', async () => {
+    // Only weekends are skipped: a holiday inside the range must not shrink it.
+    const monday = addDays(nextThursday(), 4);
+    const holiday = await agents.admin.post('/api/events').send({
+      title: 'Founders Day',
+      type: 'holiday',
+      startDate: addDays(monday, 1),
+      endDate: addDays(monday, 1),
+    });
+    assert.equal(holiday.status, 201, JSON.stringify(holiday.body));
+
+    const res = await agents.bob.post('/api/leaves').send({
+      type: 'casual',
+      startDate: addDays(monday, 1),
+      endDate: addDays(monday, 2),
+      reason: 'Away',
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.data.leave.days, 2, 'both weekdays count even though one is a holiday');
+    await agents.bob.delete(`/api/leaves/${res.body.data.leave.id}`);
+    await agents.admin.delete(`/api/events/${holiday.body.data.event.id}`);
+  });
+
+  test('a weekend-only request is rejected', async () => {
     const saturday = nextSaturday();
     const res = await agents.bob.post('/api/leaves').send({ type: 'casual', startDate: saturday, endDate: saturday, reason: 'Weekend' });
     assert.equal(res.status, 400);
+    assert.match(res.body.error.message, /weekend/i);
+  });
+
+  test('a half day is half a day however long the range', async () => {
+    const day = workday(40);
+    const res = await agents.bob.post('/api/leaves').send({
+      type: 'casual',
+      startDate: day,
+      endDate: day,
+      reason: 'Appointment',
+      isHalfDay: true,
+      halfDaySession: 'first_half',
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.data.leave.days, 0.5);
+    await agents.bob.delete(`/api/leaves/${res.body.data.leave.id}`);
   });
 
   test('overlapping requests are rejected', async () => {
@@ -129,9 +193,13 @@ describe('leave privacy and workflow', () => {
   });
 
   test("an employee cannot list, read, edit or cancel another employee's leave", async () => {
+    // Asking for Alice's leave returns Bob's own records, never hers.
     const list = await agents.bob.get('/api/leaves').query({ employee: ids.alice });
     assert.equal(list.status, 200);
-    assert.equal(list.body.data.items.length, 0, 'employee filter must not widen scope');
+    assert.ok(
+      list.body.data.items.every((l) => String(l.employee?.id ?? l.employee) === String(ids.bob)),
+      'employee filter must not widen scope',
+    );
 
     assert.equal((await agents.bob.get(`/api/leaves/${aliceLeave.id}`)).status, 404);
     const edit = await agents.bob.put(`/api/leaves/${aliceLeave.id}`).send({
@@ -175,6 +243,131 @@ describe('leave privacy and workflow', () => {
     const cancel = await agents.alice.patch(`/api/leaves/${aliceLeave.id}/cancel`);
     assert.equal(cancel.status, 200);
     assert.equal(cancel.body.data.leave.status, 'cancelled');
+  });
+});
+
+describe('leave entitlements and balances', () => {
+  const year = new Date().getFullYear();
+  let carol;
+  let carolAgent;
+
+  const balanceFor = async (agent, type, employee) => {
+    const res = await agent.get('/api/leaves/balances').query(employee ? { employee } : {});
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    return res.body.data.types.find((t) => t.type === type);
+  };
+
+  test('an admin sets each leave type when adding an employee', async () => {
+    const res = await agents.admin.post('/api/employees').send({
+      firstName: 'Carol',
+      lastName: 'Ng',
+      email: 'carol@quedesk.test',
+      password: PASSWORD,
+      role: 'employee',
+      leaveEntitlements: { casual: 10, sick: 3, wfh: 5, earned: 0, unpaid: null, other: null },
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    carol = res.body.data.user.id;
+    assert.equal(res.body.data.user.leaveEntitlements.casual, 10);
+    assert.equal(res.body.data.user.leaveEntitlements.sick, 3);
+    assert.equal(res.body.data.user.leaveEntitlements.wfh, 5);
+    carolAgent = await signIn('carol@quedesk.test');
+  });
+
+  test('WFH is a leave type like any other', async () => {
+    const res = await carolAgent.post('/api/leaves').send({
+      type: 'wfh',
+      startDate: workday(100),
+      endDate: workday(100),
+      reason: 'Plumber visiting',
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.data.leave.type, 'wfh');
+    await carolAgent.delete(`/api/leaves/${res.body.data.leave.id}`);
+  });
+
+  test('a fresh employee has spent nothing', async () => {
+    const casual = await balanceFor(carolAgent, 'casual');
+    assert.deepEqual(casual, { type: 'casual', allowed: 10, used: 0, pending: 0, remaining: 10 });
+  });
+
+  test('a pending request is not deducted; approving it is', async () => {
+    const apply = await carolAgent.post('/api/leaves').send({
+      type: 'casual',
+      startDate: `${year}-11-02`,
+      endDate: `${year}-11-04`,
+      reason: 'Family function',
+    });
+    assert.equal(apply.status, 201, JSON.stringify(apply.body));
+    const leaveId = apply.body.data.leave.id;
+    assert.equal(apply.body.data.leave.days, 3);
+
+    const whilePending = await balanceFor(carolAgent, 'casual');
+    assert.equal(whilePending.used, 0, 'pending leave must not spend the allowance');
+    assert.equal(whilePending.pending, 3);
+    assert.equal(whilePending.remaining, 10);
+
+    await agents.admin.patch(`/api/leaves/${leaveId}/review`).send({ status: 'approved' });
+    const afterApproval = await balanceFor(carolAgent, 'casual');
+    assert.equal(afterApproval.used, 3);
+    assert.equal(afterApproval.remaining, 7, '10 - 3 = 7');
+    assert.equal(afterApproval.pending, 0);
+  });
+
+  test('rejecting leaves the balance untouched', async () => {
+    const apply = await carolAgent.post('/api/leaves').send({
+      type: 'sick',
+      startDate: `${year}-11-10`,
+      endDate: `${year}-11-11`,
+      reason: 'Flu',
+    });
+    const leaveId = apply.body.data.leave.id;
+
+    await agents.admin.patch(`/api/leaves/${leaveId}/review`).send({ status: 'rejected', reviewNote: 'Send a certificate' });
+    const sick = await balanceFor(carolAgent, 'sick');
+    assert.equal(sick.used, 0, 'a rejected request spends nothing');
+    assert.equal(sick.remaining, 3, 'the full allowance is still there');
+  });
+
+  test('an approval that is later reversed gives the days back', async () => {
+    const apply = await carolAgent.post('/api/leaves').send({
+      type: 'wfh',
+      startDate: `${year}-11-16`,
+      endDate: `${year}-11-17`,
+      reason: 'Working from home',
+    });
+    const leaveId = apply.body.data.leave.id;
+
+    await agents.admin.patch(`/api/leaves/${leaveId}/review`).send({ status: 'approved' });
+    assert.equal((await balanceFor(carolAgent, 'wfh')).remaining, 3, '5 - 2 = 3');
+
+    await agents.admin.patch(`/api/leaves/${leaveId}/review`).send({ status: 'rejected' });
+    assert.equal((await balanceFor(carolAgent, 'wfh')).remaining, 5, 'reversing the approval restores the balance');
+  });
+
+  test('uncapped types are tracked but never run out', async () => {
+    const unpaid = await balanceFor(carolAgent, 'unpaid');
+    assert.equal(unpaid.allowed, null);
+    assert.equal(unpaid.remaining, null);
+  });
+
+  test('an employee sees only their own balance', async () => {
+    assert.equal((await carolAgent.get('/api/leaves/balances').query({ employee: ids.alice })).status, 403);
+
+    // An approver may look at anyone's.
+    const mine = await balanceFor(agents.admin, 'casual', carol);
+    assert.equal(mine.allowed, 10);
+    assert.equal(mine.used, 3);
+  });
+
+  test('entitlements can be changed later without touching what was taken', async () => {
+    const res = await agents.admin.patch(`/api/employees/${carol}`).send({ leaveEntitlements: { casual: 15 } });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+
+    const casual = await balanceFor(carolAgent, 'casual');
+    assert.equal(casual.allowed, 15);
+    assert.equal(casual.used, 3, 'days already taken are unchanged');
+    assert.equal(casual.remaining, 12);
   });
 });
 

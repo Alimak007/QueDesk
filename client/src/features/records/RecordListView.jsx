@@ -1,28 +1,33 @@
-import { BriefcaseBusiness, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { Button, Card, EmptyState, ErrorState, Pagination, SkeletonRows, Table, Td, Th, THead, Tr, UserCell } from '@/components/ui';
 import { formatDate } from '@/lib/dates';
-import { useLeads } from './api';
-import { SYSTEM_TITLE_KEY } from './constants';
-import { FieldValue } from './fields';
+import { FieldValue } from '@/features/sales/fields';
 
-export function LeadListView({ fields, settings, filters, setFilters, onOpen, onCreate, hasFilters }) {
-  const { data, isPending, isError, error, refetch, isFetching } = useLeads({
-    search: filters.search,
-    owner: filters.owner,
-    group: filters.group,
-    page: filters.page,
-    sortBy: filters.sortBy,
-    sortOrder: filters.sortOrder,
-    limit: 15,
-  });
-
+/** Table of records (leads or customers) using the admin-configured columns. */
+export function RecordListView({
+  query,
+  fields,
+  settings,
+  filters,
+  setFilters,
+  onOpen,
+  onCreate,
+  hasFilters,
+  titleKey,
+  emptyIcon,
+  emptyTitle,
+  emptyDescription,
+  createLabel,
+  canCreate = true,
+  extraColumns = [],
+}) {
+  const { data, isPending, isError, error, refetch, isFetching } = query;
   const columns = fields.filter((f) => f.showInList && f.isVisible);
 
   const sortProps = (sortBy) => ({
     sortable: true,
     sortDirection: filters.sortBy === sortBy ? filters.sortOrder : undefined,
-    onSort: () =>
-      setFilters({ sortBy, sortOrder: filters.sortBy === sortBy && filters.sortOrder === 'desc' ? 'asc' : 'desc' }),
+    onSort: () => setFilters({ sortBy, sortOrder: filters.sortBy === sortBy && filters.sortOrder === 'desc' ? 'asc' : 'desc' }),
   });
 
   return (
@@ -33,13 +38,14 @@ export function LeadListView({ fields, settings, filters, setFilters, onOpen, on
         <ErrorState error={error} onRetry={refetch} />
       ) : data.items.length === 0 ? (
         <EmptyState
-          icon={BriefcaseBusiness}
-          title={hasFilters ? 'No leads match your filters' : 'No leads yet'}
-          description={hasFilters ? 'Try a different search or clear the filters.' : 'Create the first lead to start building your pipeline.'}
+          icon={emptyIcon}
+          title={hasFilters ? 'Nothing matches your filters' : emptyTitle}
+          description={hasFilters ? 'Try a different search or clear the filters.' : emptyDescription}
           action={
-            !hasFilters && (
+            !hasFilters &&
+            canCreate && (
               <Button leftIcon={Plus} onClick={() => onCreate()}>
-                Add lead
+                {createLabel}
               </Button>
             )
           }
@@ -58,26 +64,32 @@ export function LeadListView({ fields, settings, filters, setFilters, onOpen, on
                     {field.label}
                   </Th>
                 ))}
+                {extraColumns.map((col) => (
+                  <Th key={col.key}>{col.label}</Th>
+                ))}
                 <Th>Owner</Th>
                 <Th {...sortProps('createdAt')}>Created</Th>
               </tr>
             </THead>
             <tbody>
-              {data.items.map((lead) => (
-                <Tr key={lead.id} onClick={() => onOpen(lead)}>
+              {data.items.map((record) => (
+                <Tr key={record.id} onClick={() => onOpen(record)}>
                   {columns.map((field) => (
                     <Td
                       key={field.key}
                       align={field.type === 'currency' || field.type === 'number' ? 'right' : 'left'}
-                      className={field.key === SYSTEM_TITLE_KEY ? 'font-medium text-slate-900' : 'max-w-56 truncate'}
+                      className={field.key === titleKey ? 'font-medium text-slate-900' : 'max-w-56 truncate'}
                     >
-                      <FieldValue field={field} value={lead.data?.[field.key]} currency={settings?.currency} />
+                      <FieldValue field={field} value={record.data?.[field.key]} currency={settings?.currency} />
                     </Td>
                   ))}
+                  {extraColumns.map((col) => (
+                    <Td key={col.key}>{col.render(record)}</Td>
+                  ))}
                   <Td>
-                    <UserCell user={lead.owner} size="xs" subtitle={null} />
+                    <UserCell user={record.owner} size="xs" subtitle={null} />
                   </Td>
-                  <Td className="whitespace-nowrap text-slate-500">{formatDate(lead.createdAt, 'd MMM yyyy')}</Td>
+                  <Td className="whitespace-nowrap text-slate-500">{formatDate(record.createdAt, 'd MMM yyyy')}</Td>
                 </Tr>
               ))}
             </tbody>

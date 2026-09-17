@@ -14,14 +14,12 @@ import {
   Menu,
   MenuItem,
   MenuSeparator,
-  PageHeader,
   Select,
   Skeleton,
   Switch,
 } from '@/components/ui';
 import { useArchiveField, useDeleteField, useReorderFields, useSalesConfig, useUpdateField, useUpdateSalesSettings } from '@/features/sales/api';
 import { FieldInput } from '@/features/sales/fields';
-import { useDocumentTitle } from '@/hooks';
 import { SALES_FIELD_TYPE_MAP } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 import { FieldEditorModal } from './FieldEditorModal';
@@ -128,9 +126,8 @@ function FormPreview({ fields, currency }) {
   );
 }
 
-export default function SalesConfigPage() {
-  useDocumentTitle('Sales Configuration');
-  const { data, isPending, isError, error, refetch } = useSalesConfig({ includeArchived: true });
+export function FieldConfigurator({ entity }) {
+  const { data, isPending, isError, error, refetch } = useSalesConfig({ entity, includeArchived: true });
   const updateField = useUpdateField();
   const archiveField = useArchiveField();
   const deleteField = useDeleteField();
@@ -167,7 +164,7 @@ export default function SalesConfigPage() {
     const [id] = ids.splice(index, 1);
     ids.splice(index + delta, 0, id);
     setLocalOrder(ids);
-    const ok = await run(reorder.mutateAsync(ids));
+    const ok = await run(reorder.mutateAsync({ entity, ids }));
     // Server data now reflects the order (or we roll back on failure).
     setLocalOrder(null);
     if (!ok) refetch();
@@ -188,15 +185,19 @@ export default function SalesConfigPage() {
 
   return (
     <>
-      <PageHeader
-        title="Sales Configuration"
-        description="Design the Sales form without a developer. Changes apply instantly for everyone."
-        actions={
-          <Button leftIcon={Plus} onClick={() => setEditor({ open: true, field: null })}>
-            Add field
-          </Button>
-        }
-      />
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+            {entity === 'customer' ? 'Customer form' : 'Lead form'}
+          </h2>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Design the form without a developer. Changes apply instantly for everyone.
+          </p>
+        </div>
+        <Button leftIcon={Plus} onClick={() => setEditor({ open: true, field: null })}>
+          Add field
+        </Button>
+      </div>
 
       {isError ? (
         <Card>
@@ -390,7 +391,7 @@ export default function SalesConfigPage() {
               <Skeleton className="h-64 w-full rounded-2xl" />
             ) : (
               <>
-                <SettingsCard key={settings.updatedAt} fields={activeFields} settings={settings} />
+                {entity === 'lead' && <SettingsCard key={settings.updatedAt} fields={activeFields} settings={settings} />}
                 <FormPreview fields={activeFields} currency={settings.currency} />
               </>
             )}
@@ -401,6 +402,7 @@ export default function SalesConfigPage() {
       <FieldEditorModal
         open={editor.open}
         field={editor.field}
+        entity={entity}
         currency={settings?.currency}
         onOpenChange={(open) => setEditor((prev) => ({ ...prev, open }))}
       />

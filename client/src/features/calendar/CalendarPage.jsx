@@ -12,7 +12,7 @@ import {
 import { CalendarDays, ChevronLeft, ChevronRight, List, MapPin, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button, Card, CardHeader, EmptyState, ErrorState, PageHeader, Skeleton, Spinner, Tabs } from '@/components/ui';
-import { useAuth } from '@/features/auth/useAuth';
+import { usePermissions } from '@/features/auth/usePermissions';
 import { useDocumentTitle, useQueryState } from '@/hooks';
 import { EVENT_TYPE_MAP, EVENT_TYPES } from '@/lib/constants';
 import { formatDate, formatDateRange, formatTime, relativeDay, toDateOnly, todayDateOnly } from '@/lib/dates';
@@ -71,8 +71,10 @@ function EventListItem({ event, onClick, showDate = true }) {
 }
 
 export default function CalendarPage() {
-  const { isAdmin } = useAuth();
-  useDocumentTitle(isAdmin ? 'Calendar Management' : 'Calendar');
+  const { can } = usePermissions();
+  const canCreate = can('calendar', 'create');
+  const canManage = canCreate || can('calendar', 'edit', 'delete');
+  useDocumentTitle('Calendar');
 
   const today = todayDateOnly();
   const [state, setState] = useQueryState({ month: format(new Date(), 'yyyy-MM'), view: 'month', type: '' });
@@ -125,10 +127,10 @@ export default function CalendarPage() {
   return (
     <>
       <PageHeader
-        title={isAdmin ? 'Calendar Management' : 'Company Calendar'}
-        description={isAdmin ? 'Add and manage holidays, events and meetings for everyone.' : 'Holidays, company events and meetings.'}
+        title="Calendar"
+        description={canManage ? 'Add and manage holidays, events and meetings for everyone.' : 'Holidays, company events and meetings.'}
         actions={
-          isAdmin && (
+          canCreate && (
             <Button leftIcon={Plus} onClick={() => openCreate(selectedDate)}>
               New event
             </Button>
@@ -250,7 +252,7 @@ export default function CalendarPage() {
                         tabIndex={0}
                         aria-label={`${format(day, 'EEEE d MMMM')}${dayEvents.length ? `, ${dayEvents.length} events` : ''}`}
                         onClick={() => setSelectedDate(key)}
-                        onDoubleClick={() => isAdmin && openCreate(key)}
+                                        onDoubleClick={() => canCreate && openCreate(key)}
                         onKeyDown={(e) => e.key === 'Enter' && setSelectedDate(key)}
                         className={cn(
                           'group relative min-h-28 cursor-pointer border-b border-r border-slate-100 p-1.5 text-left transition-colors [&:nth-child(7n)]:border-r-0',
@@ -269,7 +271,7 @@ export default function CalendarPage() {
                           >
                             {format(day, 'd')}
                           </span>
-                          {isAdmin && (
+                          {canCreate && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -310,7 +312,7 @@ export default function CalendarPage() {
               title={relativeDay(selectedDate)}
               description={formatDate(selectedDate, 'EEEE, d MMMM yyyy')}
               action={
-                isAdmin && (
+                canCreate && (
                   <Button variant="soft" size="xs" leftIcon={Plus} onClick={() => openCreate(selectedDate)}>
                     Add
                   </Button>
@@ -348,13 +350,13 @@ export default function CalendarPage() {
         event={details}
         open={Boolean(details)}
         onOpenChange={(open) => !open && setDetails(null)}
-        canManage={isAdmin}
+        canManage={can('calendar', 'edit')}
         onEdit={(event) => {
           setDetails(null);
           setForm({ open: true, event, date: undefined });
         }}
       />
-      {isAdmin && (
+      {canManage && (
         <EventFormModal
           open={form.open}
           event={form.event}

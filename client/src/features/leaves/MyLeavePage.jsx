@@ -1,17 +1,20 @@
 import { CalendarCheck2, CircleCheck, Hourglass, Plane, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, SkeletonRows, StatCard, Table, Tabs, Td, Th, THead, Tr } from '@/components/ui';
+import { usePermissions } from '@/features/auth/usePermissions';
 import { useDocumentTitle, useQueryState, useUrlParam } from '@/hooks';
-import { LEAVE_STATUSES, LEAVE_TYPES } from '@/lib/constants';
+import { LEAVE_STATUSES, LEAVE_TYPE_MAP } from '@/lib/constants';
 import { formatDate, formatDateRange } from '@/lib/dates';
-import { useLeaves, useLeaveSummary } from './api';
+import { useLeaveBalances, useLeaves, useLeaveSummary } from './api';
 import { LeaveStatusBadge, LeaveTypeLabel } from './components';
 import { formatLeaveDays } from './utils';
 import { LeaveDetailsSheet } from './LeaveDetailsSheet';
 import { LeaveFormModal } from './LeaveFormModal';
 
-export default function MyLeavePage() {
-  useDocumentTitle('My Leave');
+export default function MyLeavePage({ embedded = false }) {
+  useDocumentTitle(embedded ? undefined : 'My Leave');
+  const { can } = usePermissions();
+  const canApply = can('leave', 'create');
   const [filters, setFilters] = useQueryState({ status: '', page: 1 });
   const [action, setAction] = useUrlParam('action');
   const [detailsId, setDetailsId] = useUrlParam('leave');
@@ -19,23 +22,37 @@ export default function MyLeavePage() {
   // `?action=new` (dashboard quick action) opens the form directly.
   const formOpen = formState.open || action === 'new';
 
-  const { data, isPending, isError, error, refetch } = useLeaves({ ...filters, limit: 10 });
-  const summary = useLeaveSummary();
+  // `scope: mine` keeps this view personal even for approvers, who otherwise see everyone.
+  const { data, isPending, isError, error, refetch } = useLeaves({ ...filters, scope: 'mine', limit: 10 });
+  const summary = useLeaveSummary({ scope: 'mine' });
+  const balances = useLeaveBalances();
 
   const s = summary.data;
   const byStatus = s?.byStatus ?? {};
 
   return (
     <>
-      <PageHeader
-        title="My Leave"
-        description="Apply for leave and track the status of your requests."
-        actions={
-          <Button leftIcon={Plus} onClick={() => setFormState({ open: true, leave: null })}>
-            Apply leave
-          </Button>
-        }
-      />
+      {embedded ? (
+        canApply && (
+          <div className="mb-4 flex justify-end">
+            <Button leftIcon={Plus} onClick={() => setFormState({ open: true, leave: null })}>
+              Apply leave
+            </Button>
+          </div>
+        )
+      ) : (
+        <PageHeader
+          title="My Leave"
+          description="Apply for leave and track the status of your requests."
+          actions={
+            canApply && (
+              <Button leftIcon={Plus} onClick={() => setFormState({ open: true, leave: null })}>
+                Apply leave
+              </Button>
+            )
+          }
+        />
+      )}
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -48,16 +65,30 @@ export default function MyLeavePage() {
         <StatCard label="Pending requests" value={byStatus.pending ?? 0} icon={Hourglass} tone="amber" loading={summary.isPending} />
         <StatCard label="Approved requests" value={byStatus.approved ?? 0} icon={CircleCheck} tone="green" loading={summary.isPending} />
         <Card className="p-5">
-          <p className="text-[13px] font-medium text-slate-500">Days by type (approved)</p>
+          <p className="text-[13px] font-medium text-slate-500">Balance by type</p>
           <ul className="mt-3 space-y-1.5">
-            {LEAVE_TYPES.filter((t) => t.value !== 'other').map((t) => (
-              <li key={t.value} className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-slate-600">
-                  <span className={`size-2 rounded-full ${t.dot}`} /> {t.short}
-                </span>
-                <span className="font-medium text-slate-900 tabular">{s?.byType?.[t.value]?.approvedDays ?? 0}</span>
-              </li>
-            ))}
+            {(balances.data?.types ?? []).map((row) => {
+              const type = LEAVE_TYPE_MAP[row.type];
+              return (
+                <li key={row.type} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="flex items-center gap-2 truncate text-slate-600">
+                    <span className={`size-2 shrink-0 rounded-full ${type?.dot ?? 'bg-slate-300'}`} /> {type?.short ?? row.type}
+                  </span>
+                  {row.allowed === null ? (
+                    <span className="tabular text-slate-500">
+                      {row.used} used <span className="text-slate-400">· no limit</span>
+                    </span>
+                  ) : (
+                    <span className="tabular">
+                      <span className={row.remaining < 0 ? 'font-semibold text-red-600' : 'font-semibold text-slate-900'}>
+                        {row.remaining}
+                      </span>
+                      <span className="text-slate-400"> / {row.allowed} left</span>
+                    </span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </Card>
       </div>
@@ -81,9 +112,11 @@ export default function MyLeavePage() {
             title={filters.status ? 'No leave requests with this status' : 'No leave requests yet'}
             description="When you apply for leave, your requests and their status will appear here."
             action={
-              <Button leftIcon={Plus} onClick={() => setFormState({ open: true, leave: null })}>
-                Apply leave
-              </Button>
+              canApply && (
+                <Button leftIcon={Plus} onClick={() => setFormState({ open: true, leave: null })}>
+                  Apply leave
+                </Button>
+              )
             }
           />
         ) : (

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button, ConfirmDialog, DescriptionList, ErrorState, FormField, Sheet, Spinner, Textarea, UserCell } from '@/components/ui';
 import { useAuth } from '@/features/auth/useAuth';
+import { usePermissions } from '@/features/auth/usePermissions';
 import { useResetOnChange } from '@/hooks';
 import { formatDate, formatDateRange, timeAgo } from '@/lib/dates';
 import { cn, fullName } from '@/lib/utils';
@@ -27,7 +28,8 @@ function TimelineItem({ icon: Icon, tone, title, meta, children, last }) {
 }
 
 export function LeaveDetailsSheet({ leaveId, open, onOpenChange, onEdit, initialReviewMode = null }) {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
+  const { can } = usePermissions();
   const { data: leave, isPending, isError, error, refetch } = useLeave(open ? leaveId : null);
   const reviewLeave = useReviewLeave();
   const cancelLeave = useCancelLeave();
@@ -35,7 +37,7 @@ export function LeaveDetailsSheet({ leaveId, open, onOpenChange, onEdit, initial
   const [note, setNote] = useState('');
   const [confirmCancel, setConfirmCancel] = useState(false);
 
-  const perms = leavePermissions(leave, { isAdmin });
+  const perms = leavePermissions(leave, { can, isAdmin, userId: user.id });
 
   const reopened = useResetOnChange(open ? `${leaveId}:${initialReviewMode}` : null);
   if (reopened) {
@@ -116,7 +118,7 @@ export function LeaveDetailsSheet({ leaveId, open, onOpenChange, onEdit, initial
           <ErrorState error={error} onRetry={refetch} />
         ) : (
           <div className="space-y-6">
-            {isAdmin && (
+            {!perms.isOwn && (
               <div className="rounded-xl border border-slate-200 p-4">
                 <UserCell
                   user={leave.employee}
@@ -138,7 +140,7 @@ export function LeaveDetailsSheet({ leaveId, open, onOpenChange, onEdit, initial
             <DescriptionList
               items={[
                 { label: 'Type', value: <LeaveTypeLabel type={leave.type} /> },
-                { label: 'Working days', value: leave.days },
+                { label: 'Duration', value: leave.days },
                 { label: 'Reason', value: <span className="whitespace-pre-wrap">{leave.reason}</span>, full: true },
               ]}
             />

@@ -1,16 +1,47 @@
 import { env } from './config/env.js';
-import { connectDatabase, disconnectDatabase } from './config/db.js';
+import { connectDatabase, disconnectDatabase, explainConnectionError } from './config/db.js';
+import { runMigrations } from './config/migrations.js';
 import { createApp } from './app.js';
-import { ensureDefaultSalesFields } from './modules/sales/salesField.service.js';
+import './models.js';
 import { logger } from './utils/logger.js';
 
+const RETRY_DELAY_MS = 15_000;
+
+/**
+ * Connects and runs the pending migrations. The API starts either way: a
+ * database that is unreachable at boot (a paused cluster, an IP that has not
+ * been allow-listed yet, a laptop that is offline) should not stop the server,
+ * because it usually comes back without anyone touching the code.
+ */
+async function startDatabase() {
+  try {
+    await connectDatabase();
+    await runMigrations();
+    return true;
+  } catch (err) {
+    logger.error({ err }, `Database unavailable — ${explainConnectionError(err)}`);
+    logger.warn(`The API is running, but every request needing data will answer 503. Retrying every ${RETRY_DELAY_MS / 1000}s.`);
+    return false;
+  }
+}
+
+function retryDatabase() {
+  const timer = setInterval(async () => {
+    if (await startDatabase()) {
+      clearInterval(timer);
+      logger.info('Database reached; the API is fully available');
+    }
+  }, RETRY_DELAY_MS);
+  timer.unref();
+}
+
 async function bootstrap() {
-  await connectDatabase();
-  await ensureDefaultSalesFields();
+  const connected = await startDatabase();
+  if (!connected) retryDatabase();
 
   const app = createApp();
   const server = app.listen(env.PORT, () => {
-    logger.info(`My Portal API listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
+    logger.info(`QueDesk API listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
   });
 
   const shutdown = (signal) => {

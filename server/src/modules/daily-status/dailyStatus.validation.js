@@ -25,6 +25,8 @@ export const listDailyStatusQuery = z
     from: dateOnly('From date').optional(),
     to: dateOnly('To date').optional(),
     search: z.string().trim().max(100).optional(),
+    /** Reviewers can ask for only their own reports. */
+    scope: z.enum(['mine', 'all']).optional(),
   })
   .refine((v) => !v.from || !v.to || v.to >= v.from, { path: ['to'], message: '"to" must not be before "from"' });
 

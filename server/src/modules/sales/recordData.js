@@ -80,7 +80,7 @@ export function coerceFieldValue(field, raw) {
  * Values for archived or unknown fields in the input are ignored; values
  * already stored for archived fields are preserved by the caller.
  */
-export function validateLeadData(input, fields, { existing = null } = {}) {
+export function validateRecordData(input, fields, { existing = null, skipRequired = false } = {}) {
   const result = {};
   const details = [];
 
@@ -100,7 +100,7 @@ export function validateLeadData(input, fields, { existing = null } = {}) {
     }
 
     // Hidden fields are not on the form, so they cannot be enforced as required.
-    const enforceRequired = field.required && field.isVisible !== false;
+    const enforceRequired = !skipRequired && field.required && field.isVisible !== false;
     const missing = value === null || (field.type === 'checkbox' && value === false);
     if (enforceRequired && missing) {
       details.push({ path: `data.${field.key}`, message: `${field.label} is required` });

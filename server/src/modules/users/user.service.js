@@ -1,9 +1,11 @@
 import { ROLES, USER_STATUS } from '../../constants/index.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { buildPage, escapeRegex, getPagination } from '../../utils/pagination.js';
+import { isAdmin } from '../../utils/scope.js';
 import { DailyStatus } from '../daily-status/dailyStatus.model.js';
 import { Leave } from '../leaves/leave.model.js';
 import { Lead } from '../sales/lead.model.js';
+import { hasRelatedDocuments } from './userHistory.js';
 import { nextSequence } from './counter.model.js';
 import { User } from './user.model.js';
 
@@ -15,6 +17,22 @@ async function generateEmployeeId() {
     if (!(await User.exists({ employeeId: candidate }))) return candidate;
   }
   throw new ApiError(500, 'Could not generate a unique employee ID');
+}
+
+/**
+ * Employees who were delegated employee-management permissions can manage
+ * other employees, but never admin accounts and never roles.
+ */
+function assertCanManageTarget(actor, target) {
+  if (actor && !isAdmin(actor) && target.role === ROLES.ADMIN) {
+    throw ApiError.forbidden('Only administrators can manage administrator accounts');
+  }
+}
+
+function assertCanAssignRole(actor, role) {
+  if (actor && !isAdmin(actor) && role && role !== ROLES.EMPLOYEE) {
+    throw ApiError.forbidden('Only administrators can grant the administrator role');
+  }
 }
 
 async function assertAnotherActiveAdminExists(excludeUserId) {
@@ -29,8 +47,9 @@ async function assertAnotherActiveAdminExists(excludeUserId) {
 }
 
 export async function listUsers(query) {
-  const { search, department, role, status, sortBy, sortOrder } = query;
+  const { search, department, role, status, company, sortBy, sortOrder } = query;
   const filter = {};
+  if (company) filter.company = company;
 
   if (department) filter.department = department;
   if (role) filter.role = role;
@@ -58,12 +77,13 @@ export async function listUsers(query) {
 }
 
 export async function getUser(id) {
-  const user = await User.findById(id);
+  const user = await User.findById(id).populate('company', 'name shortName');
   if (!user) throw ApiError.notFound('Employee not found');
   return user;
 }
 
-export async function createUser({ password, employeeId, ...data }) {
+export async function createUser({ password, employeeId, ...data }, actor = null) {
+  assertCanAssignRole(actor, data.role);
   if (await User.exists({ email: data.email })) {
     throw ApiError.conflict('An employee with this email already exists', {
       details: [{ path: 'email', message: 'This email is already in use' }],
@@ -83,6 +103,8 @@ export async function createUser({ password, employeeId, ...data }) {
 
 export async function updateUser(id, updates, actor) {
   const user = await getUser(id);
+  assertCanManageTarget(actor, user);
+  if (updates.role && updates.role !== user.role) assertCanAssignRole(actor, updates.role);
 
   if (updates.role && updates.role !== user.role && user.role === ROLES.ADMIN) {
     if (user.id === actor.id) throw ApiError.conflict('You cannot change your own role');
@@ -104,6 +126,7 @@ export async function updateUser(id, updates, actor) {
 
 export async function setUserStatus(id, status, actor) {
   const user = await getUser(id);
+  assertCanManageTarget(actor, user);
   if (user.status === status) return user;
 
   if (status === USER_STATUS.INACTIVE) {
@@ -120,8 +143,9 @@ export async function setUserStatus(id, status, actor) {
   return user;
 }
 
-export async function resetPassword(id, password) {
+export async function resetPassword(id, password, actor = null) {
   const user = await getUser(id);
+  assertCanManageTarget(actor, user);
   await user.setPassword(password);
   user.tokenVersion += 1;
   await user.save();
@@ -134,6 +158,7 @@ export async function resetPassword(id, password) {
  */
 export async function deleteUser(id, actor) {
   const user = await getUser(id);
+  assertCanManageTarget(actor, user);
   if (user.id === actor.id) throw ApiError.conflict('You cannot delete your own account');
   if (user.role === ROLES.ADMIN && user.status === USER_STATUS.ACTIVE) {
     await assertAnotherActiveAdminExists(user._id);
@@ -145,7 +170,7 @@ export async function deleteUser(id, actor) {
     Lead.countDocuments({ $or: [{ owner: user._id }, { createdBy: user._id }] }),
   ]);
 
-  if (leaves + reports + leads > 0) {
+  if (leaves + reports + leads > 0 || (await hasRelatedDocuments(user._id))) {
     throw ApiError.conflict(
       'This employee has historical records (leaves, status reports or sales leads). Deactivate the account instead to preserve history.',
       { code: 'HAS_HISTORY' },

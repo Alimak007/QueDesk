@@ -2,6 +2,7 @@ import { CalendarRange, Clock, Info, MapPin, Pencil, Trash2, UserRound } from 'l
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Badge, Button, ConfirmDialog, Modal } from '@/components/ui';
+import { usePermissions } from '@/features/auth/usePermissions';
 import { EVENT_TYPE_MAP } from '@/lib/constants';
 import { formatDateRange, formatTime } from '@/lib/dates';
 import { cn, fullName } from '@/lib/utils';
@@ -19,6 +20,8 @@ function Row({ icon: Icon, children }) {
 export function EventDetailsModal({ event, open, onOpenChange, canManage, onEdit }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const deleteEvent = useDeleteEvent();
+  const { can } = usePermissions();
+  const canDelete = can('calendar', 'delete');
 
   if (!event) return null;
   const type = EVENT_TYPE_MAP[event.type] ?? EVENT_TYPE_MAP.other;
@@ -42,14 +45,18 @@ export function EventDetailsModal({ event, open, onOpenChange, canManage, onEdit
         title={event.title}
         icon={<span className={cn('mt-1.5 size-3 shrink-0 rounded-full', type.solid)} aria-hidden />}
         footer={
-          canManage ? (
+          canManage || canDelete ? (
             <>
-              <Button variant="danger-soft" leftIcon={Trash2} className="mr-auto" onClick={() => setConfirmDelete(true)}>
-                Delete
-              </Button>
-              <Button variant="secondary" leftIcon={Pencil} onClick={() => onEdit(event)}>
-                Edit
-              </Button>
+              {canDelete && (
+                <Button variant="danger-soft" leftIcon={Trash2} className="mr-auto" onClick={() => setConfirmDelete(true)}>
+                  Delete
+                </Button>
+              )}
+              {canManage && (
+                <Button variant="secondary" leftIcon={Pencil} onClick={() => onEdit(event)}>
+                  Edit
+                </Button>
+              )}
             </>
           ) : (
             <Button variant="secondary" onClick={() => onOpenChange(false)}>

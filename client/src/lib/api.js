@@ -4,7 +4,8 @@ export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
   withCredentials: true,
   timeout: 20000,
-  headers: { 'Content-Type': 'application/json' },
+  // No global Content-Type: axios picks JSON for plain objects and
+  // multipart/form-data (with the required boundary) for FormData uploads.
 });
 
 let unauthorizedHandler = null;
@@ -14,9 +15,24 @@ export function onUnauthorized(handler) {
   unauthorizedHandler = handler;
 }
 
+/**
+ * A failed blob request (a PDF download) carries its JSON error as a Blob,
+ * so the real message has to be read out before the error can be described.
+ */
+async function readBlobError(error) {
+  const data = error.response?.data;
+  if (!(data instanceof Blob)) return;
+  try {
+    error.response.data = JSON.parse(await data.text());
+  } catch {
+    error.response.data = undefined;
+  }
+}
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    await readBlobError(error);
     const status = error.response?.status;
     const url = error.config?.url ?? '';
     if (status === 401 && !url.includes('/auth/login')) {
@@ -36,11 +52,23 @@ export class ApiRequestError extends Error {
   }
 }
 
+/** 502/503/504 come from the dev proxy or a load balancer, not from the API itself. */
+const GATEWAY_STATUSES = [502, 503, 504];
+
 function normalizeError(error) {
   if (error.response) {
+    const { status } = error.response;
     const body = error.response.data?.error ?? {};
+
+    // A gateway error with no message of ours came from the proxy: the API is down.
+    if (!body.message && GATEWAY_STATUSES.includes(status)) {
+      return new ApiRequestError('The server is not responding. It may still be starting up.', {
+        status,
+        code: 'SERVER_UNAVAILABLE',
+      });
+    }
     return new ApiRequestError(body.message || 'Something went wrong', {
-      status: error.response.status,
+      status,
       code: body.code,
       details: body.details,
     });
@@ -61,6 +89,22 @@ export const http = {
   patch: (url, body) => unwrap(api.patch(url, body)),
   delete: (url) => unwrap(api.delete(url)),
 };
+
+/** Fetches a binary document (PDF) as a Blob, keeping the session cookie. */
+export const getBlob = (url, params) => api.get(url, { params, responseType: 'blob' }).then((res) => res.data);
+
+/** Saves a Blob to the user's device. */
+export function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Revoke on the next tick so Safari has time to start the download.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 /** Strips empty values so they are not sent as query params. */
 export function cleanParams(params = {}) {

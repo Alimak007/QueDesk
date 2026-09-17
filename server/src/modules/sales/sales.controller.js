@@ -3,13 +3,15 @@ import { isAdmin } from '../../utils/scope.js';
 import * as leadService from './lead.service.js';
 import * as fieldService from './salesField.service.js';
 import { getSalesSettings } from './salesSettings.model.js';
+import { convertLeadToCustomer } from '../customers/customer.service.js';
 
 /* ----------------------------- Configuration ----------------------------- */
 
 export async function getConfig(req, res) {
-  const includeArchived = isAdmin(req.user) && req.query.includeArchived === 'true';
-  const [fields, settings] = await Promise.all([fieldService.listFields({ includeArchived }), getSalesSettings()]);
-  return ok(res, { fields, settings });
+  const { entity } = req.valid.query;
+  const includeArchived = isAdmin(req.user) && req.valid.query.includeArchived === 'true';
+  const [fields, settings] = await Promise.all([fieldService.listFields({ entity, includeArchived }), getSalesSettings()]);
+  return ok(res, { entity, fields, settings });
 }
 
 export async function createField(req, res) {
@@ -34,7 +36,7 @@ export async function deleteField(req, res) {
 }
 
 export async function reorderFields(req, res) {
-  return ok(res, { fields: await fieldService.reorderFields(req.valid.body.ids) });
+  return ok(res, { fields: await fieldService.reorderFields(req.valid.body.entity, req.valid.body.ids) });
 }
 
 export async function updateSettings(req, res) {
@@ -74,4 +76,9 @@ export async function moveLead(req, res) {
 export async function deleteLead(req, res) {
   await leadService.deleteLead(req.valid.params.id);
   return noContent(res);
+}
+
+export async function convertLead(req, res) {
+  const { customer, created: isNew } = await convertLeadToCustomer(req.valid.params.id, req.user);
+  return isNew ? created(res, { customer, created: true }) : ok(res, { customer, created: false });
 }

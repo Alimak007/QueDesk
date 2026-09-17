@@ -1,5 +1,6 @@
 import { env } from '../../config/env.js';
 import toMilliseconds from '../../utils/duration.js';
+import { serializeUser } from '../../utils/permissions.js';
 import { ok } from '../../utils/response.js';
 import * as authService from './auth.service.js';
 
@@ -17,7 +18,7 @@ function setAuthCookie(res, token) {
 export async function login(req, res) {
   const { user, token } = await authService.login(req.valid.body);
   setAuthCookie(res, token);
-  return ok(res, { user });
+  return ok(res, { user: serializeUser(user) });
 }
 
 export async function logout(_req, res) {
@@ -26,16 +27,16 @@ export async function logout(_req, res) {
 }
 
 export async function me(req, res) {
-  return ok(res, { user: req.user });
+  return ok(res, { user: serializeUser(req.user) });
 }
 
 export async function updateProfile(req, res) {
   const user = await authService.updateProfile(req.user.id, req.valid.body);
-  return ok(res, { user });
+  return ok(res, { user: serializeUser(user) });
 }
 
 export async function changePassword(req, res) {
   const { user, token } = await authService.changePassword(req.user.id, req.valid.body);
   setAuthCookie(res, token);
-  return ok(res, { user });
+  return ok(res, { user: serializeUser(user) });
 }

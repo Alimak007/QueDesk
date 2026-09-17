@@ -8,9 +8,10 @@ import { z } from 'zod';
 import { Button, Checkbox, FormField, Input, Modal, RadioCards, Spinner, Textarea } from '@/components/ui';
 import { useDebouncedValue } from '@/hooks';
 import { applyServerErrors } from '@/lib/api';
-import { HALF_DAY_SESSIONS, LEAVE_TYPES } from '@/lib/constants';
+import { cn } from '@/lib/utils';
+import { HALF_DAY_SESSIONS, LEAVE_TYPE_MAP, LEAVE_TYPES } from '@/lib/constants';
 import { todayDateOnly } from '@/lib/dates';
-import { previewLeaveDays, useApplyLeave, useUpdateLeave } from './api';
+import { previewLeaveDays, useApplyLeave, useLeaveBalances, useUpdateLeave } from './api';
 
 const schema = z
   .object({
@@ -73,10 +74,12 @@ export function LeaveFormModal({ open, onOpenChange, leave }) {
     );
   }, [open, leave, reset]);
 
-  const [startDate, endDate, isHalfDay, halfDaySession] = useWatch({
+  const [type, startDate, endDate, isHalfDay, halfDaySession] = useWatch({
     control,
-    name: ['startDate', 'endDate', 'isHalfDay', 'halfDaySession'],
+    name: ['type', 'startDate', 'endDate', 'isHalfDay', 'halfDaySession'],
   });
+  const balances = useLeaveBalances();
+  const balance = balances.data?.types.find((t) => t.type === type);
   const singleDay = Boolean(startDate) && startDate === endDate;
 
   useEffect(() => {
@@ -95,6 +98,13 @@ export function LeaveFormModal({ open, onOpenChange, leave }) {
     retry: false,
     staleTime: 60_000,
   });
+
+  // Editing an approved request already spends its days, so exclude them from the comparison.
+  const alreadyCounted = isEdit && leave?.status === 'approved' && leave.type === type ? leave.days : 0;
+  const overAllowance =
+    balance?.allowed !== null && balance !== undefined && preview.data !== undefined
+      ? balance.used - alreadyCounted + preview.data > balance.allowed
+      : false;
 
   const onSubmit = async (values) => {
     const body = { ...values, halfDaySession: values.isHalfDay ? values.halfDaySession : null };
@@ -128,7 +138,18 @@ export function LeaveFormModal({ open, onOpenChange, leave }) {
       }
     >
       <form id="leave-form" onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
-        <FormField label="Leave type" required error={errors.type?.message}>
+        <FormField
+          label="Leave type"
+          required
+          error={errors.type?.message}
+          hint={
+            balance
+              ? balance.allowed === null
+                ? `${LEAVE_TYPE_MAP[type]?.short ?? type} has no yearly limit.`
+                : `${balance.remaining} of ${balance.allowed} ${LEAVE_TYPE_MAP[type]?.short ?? type} days left this year.`
+              : undefined
+          }
+        >
           <Controller
             control={control}
             name="type"
@@ -180,9 +201,14 @@ export function LeaveFormModal({ open, onOpenChange, leave }) {
                   <CircleAlert size={16} /> {preview.error.message}
                 </span>
               ) : preview.data !== undefined ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 font-medium text-brand-700 ring-1 ring-brand-200">
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 font-medium ring-1',
+                    overAllowance ? 'text-amber-700 ring-amber-300' : 'text-brand-700 ring-brand-200',
+                  )}
+                >
                   <CalendarCheck2 size={15} />
-                  {preview.data} working {preview.data === 1 ? 'day' : 'days'}
+                  {preview.data} {preview.data === 1 ? 'day' : 'days'}
                 </span>
               ) : null}
             </div>
@@ -201,7 +227,7 @@ export function LeaveFormModal({ open, onOpenChange, leave }) {
           )}
         </div>
 
-        <FormField label="Reason" required error={errors.reason?.message} hint="Weekends and company holidays are not counted.">
+        <FormField label="Reason" required error={errors.reason?.message} hint="Saturdays and Sundays are not counted.">
           {(field) => <Textarea {...field} rows={3} placeholder="e.g. Personal work" {...register('reason')} />}
         </FormField>
       </form>

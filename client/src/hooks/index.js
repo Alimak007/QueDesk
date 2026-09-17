@@ -12,7 +12,7 @@ export function useDebouncedValue(value, delay = 300) {
 
 export function useDocumentTitle(title) {
   useEffect(() => {
-    document.title = title ? `${title} · My Portal` : 'My Portal';
+    document.title = title ? `${title} · QueDesk` : 'QueDesk';
   }, [title]);
 }
 

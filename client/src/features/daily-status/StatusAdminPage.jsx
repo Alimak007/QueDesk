@@ -261,18 +261,16 @@ function AllReports({ onEdit }) {
   );
 }
 
-export default function StatusAdminPage() {
-  useDocumentTitle('Daily Status');
+export default function StatusAdminPage({ embedded = false }) {
+  useDocumentTitle(embedded ? undefined : 'Daily Status');
   const [view, setView] = useQueryState({ view: 'board' });
   const [viewing, setViewing] = useState(null);
   const [editing, setEditing] = useState(null);
 
   return (
     <>
-      <PageHeader
-        title="Daily Status"
-        description="See what everyone worked on today, and browse historical reports."
-        actions={
+      {embedded ? (
+        <div className="mb-4 flex justify-end">
           <Tabs
             value={view.view}
             onChange={(v) => setView({ view: v, date: '', department: '', employee: '', from: '', to: '', search: '' })}
@@ -281,8 +279,23 @@ export default function StatusAdminPage() {
               { value: 'reports', label: 'All reports', icon: List },
             ]}
           />
-        }
-      />
+        </div>
+      ) : (
+        <PageHeader
+          title="Daily Status"
+          description="See what everyone worked on today, and browse historical reports."
+          actions={
+            <Tabs
+              value={view.view}
+              onChange={(v) => setView({ view: v, date: '', department: '', employee: '', from: '', to: '', search: '' })}
+              options={[
+                { value: 'board', label: 'Team board', icon: LayoutGrid },
+                { value: 'reports', label: 'All reports', icon: List },
+              ]}
+            />
+          }
+        />
+      )}
 
       {view.view === 'reports' ? <AllReports onEdit={setEditing} /> : <TeamBoard onOpenReport={setViewing} />}
 

@@ -1,6 +1,5 @@
 import { Router } from 'express';
-import { ROLES } from '../../constants/index.js';
-import { authenticate, authorize } from '../../middlewares/auth.js';
+import { authenticate, requirePermission } from '../../middlewares/auth.js';
 import { validate } from '../../middlewares/validate.js';
 import { idParams } from '../../utils/validators.js';
 import * as controller from './dailyStatus.controller.js';
@@ -12,14 +11,20 @@ import {
 } from './dailyStatus.validation.js';
 
 const router = Router();
+const canRead = requirePermission('dailyStatus', 'view', 'review');
 
 router.use(authenticate);
 
-// Reads and updates are role-scoped inside the service.
-router.get('/', validate({ query: listDailyStatusQuery }), controller.list);
-router.get('/team', authorize(ROLES.ADMIN), validate({ query: teamBoardQuery }), controller.teamBoard);
-router.get('/:id', validate({ params: idParams }), controller.getOne);
-router.post('/', authorize(ROLES.EMPLOYEE), validate({ body: createDailyStatusSchema }), controller.create);
-router.put('/:id', validate({ params: idParams, body: updateDailyStatusSchema }), controller.update);
+// Reads and updates are scoped inside the service: only reviewers see other employees' reports.
+router.get('/', canRead, validate({ query: listDailyStatusQuery }), controller.list);
+router.get('/team', requirePermission('dailyStatus', 'review'), validate({ query: teamBoardQuery }), controller.teamBoard);
+router.get('/:id', canRead, validate({ params: idParams }), controller.getOne);
+router.post('/', requirePermission('dailyStatus', 'create'), validate({ body: createDailyStatusSchema }), controller.create);
+router.put(
+  '/:id',
+  requirePermission('dailyStatus', 'edit', 'review'),
+  validate({ params: idParams, body: updateDailyStatusSchema }),
+  controller.update,
+);
 
 export default router;
