@@ -3,6 +3,7 @@ import { CUSTOMER_STAGE_VALUE, SYSTEM_SALES_FIELDS } from '../constants/index.js
 import { logger } from '../utils/logger.js';
 import { Asset } from '../modules/companies/asset.model.js';
 import { Company } from '../modules/companies/company.model.js';
+import { AUDIT_RETENTION_DAYS, AuditLog } from '../modules/audit/audit.model.js';
 import { SalesField } from '../modules/sales/salesField.model.js';
 import { ensureDefaultFields } from '../modules/sales/salesField.service.js';
 import { SalesSettings } from '../modules/sales/salesSettings.model.js';
@@ -16,6 +17,7 @@ export async function runMigrations() {
   await ensureDefaultFields();
   await retireCustomerStage();
   await describeCompanyImages();
+  await ensureAuditRetention();
 }
 
 /** Fields predate the Customer form: tag them as lead fields and widen the unique index. */
@@ -95,4 +97,24 @@ async function describeCompanyImages() {
     await Company.collection.updateOne({ _id: company._id }, { $set: update });
   }
   logger.info({ count: legacy.length }, 'Converted company images to the new storage format');
+}
+
+/**
+ * The activity log is capped at one month. Creating the TTL index explicitly
+ * (rather than relying on autoIndex) means retention still applies wherever
+ * automatic indexing is turned off.
+ */
+async function ensureAuditRetention() {
+  const seconds = AUDIT_RETENTION_DAYS * 24 * 60 * 60;
+  const indexes = await AuditLog.collection.indexes().catch(() => []);
+  const existing = indexes.find((i) => i.name === 'createdAt_1');
+
+  if (existing && existing.expireAfterSeconds !== seconds) {
+    await AuditLog.collection.dropIndex('createdAt_1');
+    logger.info('Replacing the activity log retention index');
+  }
+  if (!existing || existing.expireAfterSeconds !== seconds) {
+    await AuditLog.collection.createIndex({ createdAt: 1 }, { expireAfterSeconds: seconds });
+    logger.info({ days: AUDIT_RETENTION_DAYS }, 'Activity log retention set');
+  }
 }

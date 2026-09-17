@@ -82,7 +82,7 @@ Deleting the customer unlinks the lead, which puts it back on the board as an ac
 Per-employee, per-module permissions with actions such as view, create, edit, delete, download, approve and review. Admins always keep full access.
 
 ### Settings (Administration)
-Company profiles (branding, bank details, invoice and payslip defaults), the Lead form, the Customer form and an activity log of document and permission changes.
+Company profiles (branding, bank details, invoice and payslip defaults), the Lead form, the Customer form and an activity log of document and permission changes. The activity log keeps **one month**: a TTL index removes older entries automatically.
 
 ---
 
@@ -143,7 +143,9 @@ quedesk/
 
 | Item | Decision |
 |---|---|
-| Leave types | Casual, Sick, Earned, Unpaid, Other. Weekends and calendar holidays are not counted. |
+| Leave duration | Working days only: Saturdays and Sundays are skipped, so Thursday to Monday is 3 days. Company holidays are **not** deducted — a holiday nobody asked off should not shrink a request. A weekend-only range is rejected. A half day is 0.5. |
+| Leave types | Casual, Sick, Earned, **WFH**, Unpaid, Other. |
+| Leave entitlement | Set per employee when adding or editing them: days of each type per calendar year. Blank means no limit (unpaid leave). Balances are derived from approved leave, never from a stored counter, so approving spends the allowance and rejecting or cancelling gives it straight back. Going over the allowance is flagged, not blocked. |
 | Leave editing | Employees edit only pending requests; they can cancel pending ones, or approved ones that haven't started. |
 | Daily status | Structured: work done, next steps, blockers, hours. One report per person per day. |
 | Lead → Customer | Converting is an explicit button on the lead, is idempotent, and requires the customer-create permission. A converted lead leaves the board, stays in the list as *Converted*, and is read-only. |

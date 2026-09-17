@@ -15,9 +15,24 @@ export function onUnauthorized(handler) {
   unauthorizedHandler = handler;
 }
 
+/**
+ * A failed blob request (a PDF download) carries its JSON error as a Blob,
+ * so the real message has to be read out before the error can be described.
+ */
+async function readBlobError(error) {
+  const data = error.response?.data;
+  if (!(data instanceof Blob)) return;
+  try {
+    error.response.data = JSON.parse(await data.text());
+  } catch {
+    error.response.data = undefined;
+  }
+}
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    await readBlobError(error);
     const status = error.response?.status;
     const url = error.config?.url ?? '';
     if (status === 401 && !url.includes('/auth/login')) {
@@ -37,11 +52,23 @@ export class ApiRequestError extends Error {
   }
 }
 
+/** 502/503/504 come from the dev proxy or a load balancer, not from the API itself. */
+const GATEWAY_STATUSES = [502, 503, 504];
+
 function normalizeError(error) {
   if (error.response) {
+    const { status } = error.response;
     const body = error.response.data?.error ?? {};
+
+    // A gateway error with no message of ours came from the proxy: the API is down.
+    if (!body.message && GATEWAY_STATUSES.includes(status)) {
+      return new ApiRequestError('The server is not responding. It may still be starting up.', {
+        status,
+        code: 'SERVER_UNAVAILABLE',
+      });
+    }
     return new ApiRequestError(body.message || 'Something went wrong', {
-      status: error.response.status,
+      status,
       code: body.code,
       details: body.details,
     });

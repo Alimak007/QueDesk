@@ -93,7 +93,7 @@ export async function createPayslip(input, actor) {
     ...input,
     ...totals,
     payslipNumber: await nextPayslipNumber(company, input.payDate),
-    currency: company.currency,
+    currency: input.currency || company.currency,
     employeeSnapshot: snapshotOf(employee),
     createdBy: actor._id,
   });
@@ -120,7 +120,7 @@ export async function updatePayslip(id, input, actor) {
   }
 
   Object.assign(payslip, input, calculateTotals(input), {
-    currency: company.currency,
+    currency: input.currency || company.currency,
     employeeSnapshot: snapshotOf(employee),
     updatedBy: actor._id,
   });

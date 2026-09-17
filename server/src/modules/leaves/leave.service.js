@@ -1,11 +1,11 @@
+import mongoose from 'mongoose';
 import { LEAVE_STATUS, LEAVE_TYPES, NOTIFICATION_TYPES } from '../../constants/index.js';
 import { ApiError } from '../../utils/ApiError.js';
-import { eachDate, isWeekend, todayDateOnly } from '../../utils/dates.js';
+import { countWeekdays, todayDateOnly } from '../../utils/dates.js';
 import { USER_SUMMARY_FIELDS } from '../../utils/mongoose.js';
 import { buildPage, getPagination } from '../../utils/pagination.js';
 import { can } from '../../utils/permissions.js';
 import { canManage, isAdmin } from '../../utils/scope.js';
-import { getHolidayDates } from '../events/event.service.js';
 import { notify, notifyUsersWithPermission } from '../notifications/notification.service.js';
 import { Leave } from './leave.model.js';
 
@@ -19,19 +19,19 @@ const POPULATE = [
 
 const fullName = (u) => [u?.firstName, u?.lastName].filter(Boolean).join(' ');
 
-/** Working days in the range, excluding weekends and company holidays. */
+/**
+ * Working days in the range, counting both ends but skipping Saturdays and
+ * Sundays: Thursday to Monday is 3 days. Company holidays are *not* deducted —
+ * a holiday the employee never asked off would silently shrink their request.
+ */
 export async function calculateLeaveDays({ startDate, endDate, isHalfDay }) {
-  const holidays = await getHolidayDates(startDate, endDate);
-  let days = 0;
-  for (const date of eachDate(startDate, endDate)) {
-    if (!isWeekend(date) && !holidays.has(date)) days += 1;
-  }
-  if (isHalfDay && days > 0) days = 0.5;
+  if (isHalfDay) return 0.5;
 
+  const days = countWeekdays(startDate, endDate);
   if (days === 0) {
-    throw ApiError.badRequest('The selected dates fall entirely on weekends or company holidays', {
+    throw ApiError.badRequest('Those dates are all weekend, so there is nothing to take off', {
       code: 'VALIDATION_ERROR',
-      details: [{ path: 'endDate', message: 'No working days in the selected range' }],
+      details: [{ path: 'endDate', message: 'Pick a range that includes at least one weekday' }],
     });
   }
   return days;
@@ -202,6 +202,41 @@ export async function reviewLeave(id, { status, reviewNote = '' }, actor) {
   });
 
   return leave.populate(POPULATE);
+}
+
+/**
+ * What an employee is entitled to this year and how much of it is gone.
+ *
+ * `used` is derived from the approved leave itself rather than a running
+ * counter, so approving spends the allowance, and rejecting, cancelling or
+ * deleting a request gives it straight back — the two can never drift apart.
+ */
+export async function getLeaveBalances(employeeId, { year = Number(todayDateOnly().slice(0, 4)) } = {}) {
+  const { User } = await import('../users/user.model.js');
+  const employee = await User.findById(employeeId).select('leaveEntitlements').lean();
+  if (!employee) throw ApiError.notFound('Employee not found');
+
+  const rows = await Leave.aggregate([
+    {
+      $match: {
+        employee: new mongoose.Types.ObjectId(String(employeeId)),
+        status: { $in: [LEAVE_STATUS.APPROVED, LEAVE_STATUS.PENDING] },
+        startDate: { $gte: `${year}-01-01`, $lte: `${year}-12-31` },
+      },
+    },
+    { $group: { _id: { type: '$type', status: '$status' }, days: { $sum: '$days' } } },
+  ]);
+
+  const entitlements = employee.leaveEntitlements ?? {};
+  const types = LEAVE_TYPES.map((type) => {
+    const used = rows.find((r) => r._id.type === type && r._id.status === LEAVE_STATUS.APPROVED)?.days ?? 0;
+    const pending = rows.find((r) => r._id.type === type && r._id.status === LEAVE_STATUS.PENDING)?.days ?? 0;
+    // `null` allowance means the type is uncapped, so there is nothing to run down.
+    const allowed = entitlements[type] ?? null;
+    return { type, allowed, used, pending, remaining: allowed === null ? null : allowed - used };
+  });
+
+  return { year, types };
 }
 
 /** Per-type totals for a year, scoped to the actor (or organisation-wide for approvers). */

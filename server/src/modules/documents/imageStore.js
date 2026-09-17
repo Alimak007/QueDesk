@@ -17,6 +17,17 @@ import { PDF_SAFE_FORMATS } from './imageFormat.js';
 const CLOUDINARY_FORMATS = ['png', 'jpeg', 'webp', 'gif', 'avif', 'heic', 'bmp', 'tiff'];
 const FOLDER = 'quedesk/companies';
 
+/** A slow CDN must never hold up a document; the logo is optional, the PDF is not. */
+const FETCH_TIMEOUT_MS = 8000;
+
+/**
+ * Downloaded logos and signatures, keyed by the exact delivery URL. Every
+ * upload gets a fresh public id, so a cached entry can never go stale — and
+ * generating a document no longer waits on the network at all.
+ */
+const downloads = new Map();
+const MAX_CACHED = 20;
+
 let configured = false;
 
 export function isCloudinaryConfigured() {
@@ -106,6 +117,9 @@ export async function removeImage(asset) {
   if (!asset) return;
   try {
     if (asset.provider === 'cloudinary' && asset.publicId) {
+      for (const url of downloads.keys()) {
+        if (url.includes(asset.publicId)) downloads.delete(url);
+      }
       await client().uploader.destroy(asset.publicId, { resource_type: 'image', invalidate: true });
     } else if (asset.assetId) {
       await Asset.deleteOne({ _id: asset.assetId });
@@ -131,12 +145,17 @@ export async function getImageBuffer(asset, { forPdf = false } = {}) {
       ...(needsConversion ? { format: 'png' } : { format: asset.format }),
     });
 
-    const response = await fetch(url);
+    const mimeType = needsConversion ? 'image/png' : asset.mimeType;
+    const cached = downloads.get(url);
+    if (cached) return { buffer: cached, mimeType };
+
+    const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!response.ok) throw new ApiError(502, 'The stored image could not be retrieved');
-    return {
-      buffer: Buffer.from(await response.arrayBuffer()),
-      mimeType: needsConversion ? 'image/png' : asset.mimeType,
-    };
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    if (downloads.size >= MAX_CACHED) downloads.delete(downloads.keys().next().value);
+    downloads.set(url, buffer);
+    return { buffer, mimeType };
   }
 
   const stored = await Asset.findById(asset.assetId);

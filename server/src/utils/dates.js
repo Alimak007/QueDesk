@@ -37,6 +37,22 @@ export function* eachDate(start, end) {
   }
 }
 
+/** Calendar days from start to end, counting both ends: 17th to 19th is 3. */
+export function countDaysInclusive(start, end) {
+  const from = new Date(`${start}T00:00:00Z`);
+  const to = new Date(`${end}T00:00:00Z`);
+  return Math.round((to - from) / 86_400_000) + 1;
+}
+
+/** Days from start to end that are not a Saturday or Sunday: Thu to Mon is 3. */
+export function countWeekdays(start, end) {
+  let days = 0;
+  for (const date of eachDate(start, end)) {
+    if (!isWeekend(date)) days += 1;
+  }
+  return days;
+}
+
 export function isWeekend(dateOnly) {
   const day = new Date(`${dateOnly}T00:00:00Z`).getUTCDay();
   return day === 0 || day === 6;

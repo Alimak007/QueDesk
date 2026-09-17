@@ -14,7 +14,14 @@ const auditLogSchema = new mongoose.Schema(
   { timestamps: { createdAt: true, updatedAt: false } },
 );
 
+/**
+ * The activity log keeps one month of history. MongoDB's TTL monitor removes
+ * anything older on its own, so the collection never needs pruning by hand.
+ */
+export const AUDIT_RETENTION_DAYS = 30;
+
 auditLogSchema.index({ createdAt: -1 });
+auditLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: AUDIT_RETENTION_DAYS * 24 * 60 * 60 });
 auditLogSchema.index({ entityType: 1, createdAt: -1 });
 auditLogSchema.index({ entityType: 1, entityId: 1, createdAt: -1 });
 

@@ -140,7 +140,7 @@ export function LeaveDetailsSheet({ leaveId, open, onOpenChange, onEdit, initial
             <DescriptionList
               items={[
                 { label: 'Type', value: <LeaveTypeLabel type={leave.type} /> },
-                { label: 'Working days', value: leave.days },
+                { label: 'Duration', value: leave.days },
                 { label: 'Reason', value: <span className="whitespace-pre-wrap">{leave.reason}</span>, full: true },
               ]}
             />

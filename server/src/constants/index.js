@@ -8,7 +8,21 @@ export const USER_STATUS = Object.freeze({
   INACTIVE: 'inactive',
 });
 
-export const LEAVE_TYPES = Object.freeze(['casual', 'sick', 'earned', 'unpaid', 'other']);
+export const LEAVE_TYPES = Object.freeze(['casual', 'sick', 'earned', 'wfh', 'unpaid', 'other']);
+
+/**
+ * Days of each type a new employee gets per calendar year. `null` means the
+ * type is not capped — unpaid leave has no allowance to run down. Admins set
+ * these per person when adding or editing an employee.
+ */
+export const DEFAULT_LEAVE_ENTITLEMENTS = Object.freeze({
+  casual: 12,
+  sick: 6,
+  earned: 12,
+  wfh: 24,
+  unpaid: null,
+  other: null,
+});
 
 export const LEAVE_STATUS = Object.freeze({
   PENDING: 'pending',

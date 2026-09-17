@@ -4,11 +4,26 @@ export const LEAVE_TYPES = [
   { value: 'casual', label: 'Casual leave', short: 'Casual', dot: 'bg-sky-500' },
   { value: 'sick', label: 'Sick leave', short: 'Sick', dot: 'bg-rose-500' },
   { value: 'earned', label: 'Earned leave', short: 'Earned', dot: 'bg-emerald-500' },
+  { value: 'wfh', label: 'Work from home', short: 'WFH', dot: 'bg-violet-500' },
   { value: 'unpaid', label: 'Unpaid leave', short: 'Unpaid', dot: 'bg-amber-500' },
   { value: 'other', label: 'Other', short: 'Other', dot: 'bg-slate-400' },
 ];
 
 export const LEAVE_TYPE_MAP = Object.fromEntries(LEAVE_TYPES.map((t) => [t.value, t]));
+
+/**
+ * Days per year a new employee starts with, mirroring the server defaults.
+ * Used only to prefill the form; the server decides what is actually stored.
+ * A blank value leaves the type uncapped, as unpaid leave is.
+ */
+export const DEFAULT_LEAVE_ENTITLEMENTS = Object.freeze({
+  casual: 12,
+  sick: 6,
+  earned: 12,
+  wfh: 24,
+  unpaid: null,
+  other: null,
+});
 
 export const LEAVE_STATUSES = [
   { value: 'pending', label: 'Pending', tone: 'amber' },

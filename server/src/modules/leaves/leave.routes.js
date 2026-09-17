@@ -3,7 +3,7 @@ import { authenticate, requirePermission } from '../../middlewares/auth.js';
 import { validate } from '../../middlewares/validate.js';
 import { idParams } from '../../utils/validators.js';
 import * as controller from './leave.controller.js';
-import { leaveSchema, listLeavesQuery, reviewLeaveSchema, summaryQuery } from './leave.validation.js';
+import { balancesQuery, leaveSchema, listLeavesQuery, reviewLeaveSchema, summaryQuery } from './leave.validation.js';
 
 const router = Router();
 const canRead = requirePermission('leave', 'view', 'approve');
@@ -13,6 +13,7 @@ router.use(authenticate);
 // Reads are scoped inside the service: only approvers see other employees' leave.
 router.get('/', canRead, validate({ query: listLeavesQuery }), controller.list);
 router.get('/summary', canRead, validate({ query: summaryQuery }), controller.summary);
+router.get('/balances', canRead, validate({ query: balancesQuery }), controller.balances);
 router.post(
   '/preview',
   requirePermission('leave', 'create', 'edit', 'approve'),

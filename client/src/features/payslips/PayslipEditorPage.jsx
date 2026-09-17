@@ -27,6 +27,13 @@ const schema = z
     periodStart: z.string().min(1, 'Required'),
     periodEnd: z.string().min(1, 'Required'),
     payDate: z.string().min(1, 'Required'),
+    currency: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z]{3}$/, 'Use a 3-letter code, e.g. AED')
+      .optional()
+      .or(z.literal('')),
     earnings: z.array(componentSchema).min(1, 'Add at least one earning'),
     deductions: z.array(componentSchema),
     notes: z.string().trim().max(500).optional(),
@@ -112,13 +119,14 @@ export default function PayslipEditorPage() {
       periodStart: monthStart(),
       periodEnd: monthEnd(),
       payDate: monthEnd(),
+      currency: '',
       earnings: [{ label: 'Basic Pay', amount: 0 }],
       deductions: [],
       notes: '',
     },
   });
 
-  const [employeeId, companyId] = useWatch({ control, name: ['employee', 'company'] });
+  const [employeeId, companyId, typedCurrency] = useWatch({ control, name: ['employee', 'company', 'currency'] });
   const defaults = usePayslipDefaults({ employee: employeeId, company: companyId }, { enabled: Boolean(employeeId) && !isEdit });
 
   useEffect(() => {
@@ -130,6 +138,7 @@ export default function PayslipEditorPage() {
       periodStart: p.periodStart,
       periodEnd: p.periodEnd,
       payDate: p.payDate,
+      currency: p.currency ?? '',
       earnings: p.earnings.map((e) => ({ label: e.label, amount: e.amount })),
       deductions: p.deductions.map((d) => ({ label: d.label, amount: d.amount })),
       notes: p.notes ?? '',
@@ -150,10 +159,12 @@ export default function PayslipEditorPage() {
     toast.success(defaults.data.copiedFrom ? `Copied from ${defaults.data.copiedFrom.payslipNumber}` : 'Loaded company defaults');
   };
 
-  const currency = useMemo(
+  const companyCurrency = useMemo(
     () => companies.data?.find((c) => c.id === companyId)?.currency ?? 'INR',
     [companies.data, companyId],
   );
+  // A typed code wins, so the totals below update as it is entered.
+  const currency = /^[A-Za-z]{3}$/.test(typedCurrency ?? '') ? typedCurrency.toUpperCase() : companyCurrency;
 
   const onSubmit = async (values) => {
     const body = {
@@ -161,6 +172,8 @@ export default function PayslipEditorPage() {
       earnings: values.earnings.map((e) => ({ label: e.label, amount: Number(e.amount) })),
       deductions: values.deductions.map((d) => ({ label: d.label, amount: Number(d.amount) })),
     };
+    // Blank means "use the company's", which the server reads as the field being absent.
+    if (!body.currency) delete body.currency;
     try {
       const saved = isEdit ? await updatePayslip.mutateAsync({ id, ...body }) : await createPayslip.mutateAsync(body);
       toast.success(isEdit ? 'Payslip updated' : `Payslip ${saved.payslipNumber} generated`);
@@ -248,6 +261,22 @@ export default function PayslipEditorPage() {
               </FormField>
               <FormField label="Pay date" required error={errors.payDate?.message}>
                 {(ids) => <Input {...ids} type="date" {...register('payDate')} />}
+              </FormField>
+              <FormField
+                label="Currency"
+                error={errors.currency?.message}
+                hint={`3-letter code. Leave blank to use the company's (${companyCurrency}).`}
+              >
+                {(ids) => (
+                  <Input
+                    {...ids}
+                    className="uppercase"
+                    maxLength={3}
+                    placeholder={companyCurrency}
+                    autoComplete="off"
+                    {...register('currency')}
+                  />
+                )}
               </FormField>
               <FormField label="Note (optional)" error={errors.notes?.message} className="sm:col-span-2">
                 {(ids) => <Textarea {...ids} rows={2} placeholder="Shown under the net pay" {...register('notes')} />}

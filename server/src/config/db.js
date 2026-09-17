@@ -41,6 +41,33 @@ export async function connectDatabase(dbName = env.MONGODB_DB_NAME) {
   return mongoose.connection;
 }
 
+/** True once queries can actually run. */
+export function isDatabaseReady() {
+  return mongoose.connection.readyState === 1;
+}
+
+/**
+ * Turns a connection failure into something actionable. Atlas accepts the TCP
+ * connection and then aborts the TLS handshake when the caller's IP is not on
+ * the project's access list, which otherwise reads as an unexplained TLS error.
+ */
+export function explainConnectionError(err) {
+  const message = err?.message ?? '';
+  if (/tlsv1 alert internal error|SSL alert number 80/i.test(message)) {
+    return "The database refused the TLS handshake. On MongoDB Atlas this almost always means this machine's public IP is not on the project's Network Access list.";
+  }
+  if (/querySrv|queryTxt/.test(message)) {
+    return 'The database hostname could not be resolved. Check your internet connection, or set DNS_SERVERS=1.1.1.1,8.8.8.8 in server/.env.';
+  }
+  if (/Authentication failed|bad auth/i.test(message)) {
+    return 'The database rejected the credentials in MONGODB_URI.';
+  }
+  if (/ECONNREFUSED/.test(message)) {
+    return 'Nothing is listening at MONGODB_URI. Is your local MongoDB running?';
+  }
+  return message || 'The database could not be reached.';
+}
+
 export async function disconnectDatabase() {
   await mongoose.disconnect();
 }

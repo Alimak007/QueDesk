@@ -312,6 +312,47 @@ describe('payslips', () => {
     assert.equal(res.body.data.copiedFrom.payslipNumber.startsWith('PS-'), true);
   });
 
+  test('the currency can be typed per payslip', async () => {
+    const res = await agents.admin.post('/api/payslips').send({
+      company: ids.uae,
+      employee: ids.emma,
+      periodStart: '2026-07-01',
+      periodEnd: '2026-07-31',
+      payDate: '2026-07-31',
+      currency: 'usd',
+      earnings: [{ label: 'Basic Pay', amount: 1000 }],
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.equal(res.body.data.payslip.currency, 'USD', 'a typed code is stored uppercase');
+
+    // Left out, it falls back to the company's own currency.
+    const fallback = await agents.admin.post('/api/payslips').send({
+      company: ids.uae,
+      employee: ids.emma,
+      periodStart: '2026-08-01',
+      periodEnd: '2026-08-31',
+      payDate: '2026-08-31',
+      earnings: [{ label: 'Basic Pay', amount: 1000 }],
+    });
+    assert.equal(fallback.status, 201, JSON.stringify(fallback.body));
+    assert.equal(fallback.body.data.payslip.currency, 'AED');
+
+    const bad = await agents.admin.post('/api/payslips').send({
+      company: ids.uae,
+      employee: ids.emma,
+      periodStart: '2026-06-01',
+      periodEnd: '2026-06-30',
+      payDate: '2026-06-30',
+      currency: 'dollars',
+      earnings: [{ label: 'Basic Pay', amount: 1000 }],
+    });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.error.details[0].path, 'currency');
+
+    await agents.admin.delete(`/api/payslips/${res.body.data.payslip.id}`);
+    await agents.admin.delete(`/api/payslips/${fallback.body.data.payslip.id}`);
+  });
+
   test('the PDF is generated and downloads are permission-gated', async () => {
     await setPermissions(ids.emma, { payslips: ['view'] });
     assert.equal((await agents.emma.get(`/api/payslips/${payslipId}/pdf`)).status, 403);

@@ -1,9 +1,18 @@
 import { z } from 'zod';
-import { ROLES, USER_STATUS } from '../../constants/index.js';
+import { LEAVE_TYPES, ROLES, USER_STATUS } from '../../constants/index.js';
 import { paginationQuery } from '../../utils/pagination.js';
 import { dateOnly, objectId, optionalTrimmed, passwordSchema, trimmed } from '../../utils/validators.js';
 
 const email = z.string().trim().toLowerCase().pipe(z.email('Enter a valid email address'));
+
+/** Days per leave type; null (or omitted) leaves that type uncapped. */
+const leaveEntitlements = z
+  .object(
+    Object.fromEntries(
+      LEAVE_TYPES.map((t) => [t, z.coerce.number().int('Whole days only').min(0, 'Cannot be negative').max(366).nullable().optional()]),
+    ),
+  )
+  .optional();
 
 const baseFields = {
   firstName: trimmed('First name', { max: 60 }),
@@ -20,6 +29,7 @@ const baseFields = {
   joiningDate: dateOnly('Joining date').nullable().optional(),
   role: z.enum(Object.values(ROLES)).optional(),
   company: objectId('company').nullable().optional(),
+  leaveEntitlements,
 };
 
 export const createUserSchema = z.object({

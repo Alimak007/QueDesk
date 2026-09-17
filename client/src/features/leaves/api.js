@@ -6,6 +6,7 @@ export const leaveKeys = {
   list: (params) => ['leaves', 'list', params],
   detail: (id) => ['leaves', 'detail', id],
   summary: (params) => ['leaves', 'summary', params],
+  balances: (params) => ['leaves', 'balances', params],
 };
 
 export function useLeaves(params) {
@@ -28,6 +29,14 @@ export function useLeaveSummary(params = {}) {
   return useQuery({
     queryKey: leaveKeys.summary(params),
     queryFn: () => http.get('/leaves/summary', cleanParams(params)),
+  });
+}
+
+/** Entitlement, used and remaining days per leave type. Own balance by default. */
+export function useLeaveBalances(params = {}) {
+  return useQuery({
+    queryKey: leaveKeys.balances(params),
+    queryFn: () => http.get('/leaves/balances', cleanParams(params)),
   });
 }
 

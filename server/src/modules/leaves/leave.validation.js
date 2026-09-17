@@ -63,3 +63,9 @@ export const summaryQuery = z.object({
   year: z.coerce.number().int().min(2000).max(2100).optional(),
   scope: z.enum(['mine', 'all']).optional(),
 });
+
+export const balancesQuery = z.object({
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
+  /** Omitted means the signed-in employee; another id needs the approve permission. */
+  employee: objectId('employee').optional(),
+});

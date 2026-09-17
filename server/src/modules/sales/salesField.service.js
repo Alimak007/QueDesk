@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { SYSTEM_FIELD_KEYS, SYSTEM_SALES_FIELDS } from '../../constants/index.js';
+import { SYSTEM_FIELD_KEYS } from '../../constants/index.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { logger } from '../../utils/logger.js';
 import { DEFAULT_FIELDS } from './defaultFields.js';

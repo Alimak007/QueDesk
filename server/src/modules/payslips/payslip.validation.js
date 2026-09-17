@@ -18,6 +18,13 @@ const payslipFields = {
   periodStart: dateOnly('Period start'),
   periodEnd: dateOnly('Period end'),
   payDate: dateOnly('Pay date'),
+  /** Typed per payslip; falls back to the company currency when left blank. */
+  currency: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{3}$/, 'Use a 3-letter currency code, e.g. AED, INR or USD')
+    .optional(),
   earnings: z.array(componentSchema).min(1, 'Add at least one earning').max(20, 'At most 20 earnings'),
   deductions: z.array(componentSchema).max(20, 'At most 20 deductions').default([]),
   notes: optionalTrimmed('Notes', 500),

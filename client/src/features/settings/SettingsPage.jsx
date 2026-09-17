@@ -186,7 +186,10 @@ function AuditTab() {
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">Activity log</h2>
-          <p className="mt-0.5 text-sm text-slate-500">Who created, changed, downloaded or deleted documents and permissions.</p>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Who created, changed, downloaded or deleted documents and permissions. Entries older than one month are removed
+            automatically.
+          </p>
         </div>
         <Select
           aria-label="Filter by type"

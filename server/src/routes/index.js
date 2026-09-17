@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
+import { isDatabaseReady } from '../config/db.js';
+import { ApiError } from '../utils/ApiError.js';
 import auditRoutes from '../modules/audit/audit.routes.js';
 import authRoutes from '../modules/auth/auth.routes.js';
 import companyRoutes from '../modules/companies/company.routes.js';
@@ -24,6 +26,20 @@ router.get('/health', (_req, res) => {
     data: { status: dbUp ? 'ok' : 'degraded', database: dbUp ? 'connected' : 'disconnected', uptime: process.uptime() },
   });
 });
+
+/**
+ * Everything below needs data. Answering straight away beats letting each
+ * query wait out the server-selection timeout and fail with a driver error.
+ */
+router.use((_req, _res, next) =>
+  isDatabaseReady()
+    ? next()
+    : next(
+        new ApiError(503, 'The server cannot reach its database right now. Please try again in a moment.', {
+          code: 'DATABASE_UNAVAILABLE',
+        }),
+      ),
+);
 
 router.use('/auth', authRoutes);
 router.use('/dashboard', dashboardRoutes);

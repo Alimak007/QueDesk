@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 import { Button, FormField, Input, Modal, RadioCards } from '@/components/ui';
 import { applyServerErrors } from '@/lib/api';
+import { DEFAULT_LEAVE_ENTITLEMENTS, LEAVE_TYPES } from '@/lib/constants';
 import { useCreateEmployee, useDepartments, useUpdateEmployee } from './api';
 import { generatePassword, passwordRule } from './passwords';
 
@@ -21,8 +22,31 @@ const base = {
   role: z.enum(['employee', 'admin']),
 };
 
-const createSchema = z.object({ ...base, password: passwordRule });
-const editSchema = z.object({ ...base, employeeId: base.employeeId.refine((v) => v?.length, 'Employee ID is required') });
+/** Blank means the type is uncapped, so an empty string is a valid entitlement. */
+const entitlement = z
+  .union([z.literal(''), z.coerce.number().int('Whole days only').min(0, 'Cannot be negative').max(366, 'That is more than a year')])
+  .optional();
+
+const leaveEntitlements = z.object(Object.fromEntries(LEAVE_TYPES.map((t) => [t.value, entitlement])));
+
+const createSchema = z.object({ ...base, leaveEntitlements, password: passwordRule });
+const editSchema = z.object({
+  ...base,
+  leaveEntitlements,
+  employeeId: base.employeeId.refine((v) => v?.length, 'Employee ID is required'),
+});
+
+/** The form keeps entitlements as strings; blank round-trips as null (no limit). */
+const entitlementsToForm = (stored) =>
+  Object.fromEntries(
+    LEAVE_TYPES.map((t) => {
+      const value = stored?.[t.value];
+      return [t.value, value === null || value === undefined ? '' : String(value)];
+    }),
+  );
+
+const entitlementsToApi = (values) =>
+  Object.fromEntries(LEAVE_TYPES.map((t) => [t.value, values[t.value] === '' ? null : Number(values[t.value])]));
 
 const empty = () => ({
   firstName: '',
@@ -34,6 +58,7 @@ const empty = () => ({
   designation: '',
   joiningDate: '',
   role: 'employee',
+  leaveEntitlements: entitlementsToForm(DEFAULT_LEAVE_ENTITLEMENTS),
   password: generatePassword(),
 });
 
@@ -69,13 +94,14 @@ export function EmployeeFormModal({ open, onOpenChange, employee, onCreated }) {
             designation: employee.designation ?? '',
             joiningDate: employee.joiningDate ?? '',
             role: employee.role,
+            leaveEntitlements: entitlementsToForm(employee.leaveEntitlements),
           }
         : empty(),
     );
   }, [open, employee, reset]);
 
-  const onSubmit = async ({ joiningDate, employeeId, ...values }) => {
-    const body = { ...values, joiningDate: joiningDate || null };
+  const onSubmit = async ({ joiningDate, employeeId, leaveEntitlements: entitlements, ...values }) => {
+    const body = { ...values, joiningDate: joiningDate || null, leaveEntitlements: entitlementsToApi(entitlements) };
     if (employeeId) body.employeeId = employeeId;
     try {
       const saved = isEdit ? await update.mutateAsync({ id: employee.id, ...body }) : await create.mutateAsync(body);
@@ -172,6 +198,31 @@ export function EmployeeFormModal({ open, onOpenChange, employee, onCreated }) {
               )}
             />
           </FormField>
+        </fieldset>
+
+        <fieldset>
+          <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Leave entitlement</legend>
+          <p className="mb-3 text-xs text-slate-500">
+            Days of each type this person may take per calendar year. Approved leave is deducted from the balance; rejected and
+            cancelled requests are not. Leave a box empty for no limit.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {LEAVE_TYPES.map((type) => (
+              <FormField key={type.value} label={type.label} error={errors.leaveEntitlements?.[type.value]?.message}>
+                {(field) => (
+                  <Input
+                    {...field}
+                    type="number"
+                    min="0"
+                    max="366"
+                    step="1"
+                    placeholder="No limit"
+                    {...register(`leaveEntitlements.${type.value}`)}
+                  />
+                )}
+              </FormField>
+            ))}
+          </div>
         </fieldset>
 
         {!isEdit && (
