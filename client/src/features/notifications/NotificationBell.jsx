@@ -1,4 +1,4 @@
-import { Bell, BellOff, CircleCheck, CircleX, Plane, Undo2 } from 'lucide-react';
+import { Bell, BellOff, CircleCheck, CircleX, Pencil, Plane, Undo2 } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Button, PopoverPanel, Spinner } from '@/components/ui';
@@ -11,6 +11,7 @@ const TYPE_STYLES = {
   leave_approved: { icon: CircleCheck, className: 'bg-emerald-50 text-emerald-600' },
   leave_rejected: { icon: CircleX, className: 'bg-red-50 text-red-600' },
   leave_cancelled: { icon: Undo2, className: 'bg-slate-100 text-slate-600' },
+  leave_updated: { icon: Pencil, className: 'bg-amber-50 text-amber-600' },
 };
 
 export function NotificationBell() {

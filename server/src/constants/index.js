@@ -81,4 +81,5 @@ export const NOTIFICATION_TYPES = Object.freeze({
   LEAVE_APPROVED: 'leave_approved',
   LEAVE_REJECTED: 'leave_rejected',
   LEAVE_CANCELLED: 'leave_cancelled',
+  LEAVE_UPDATED: 'leave_updated',
 });

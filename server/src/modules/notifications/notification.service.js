@@ -24,16 +24,21 @@ export async function notifyAdmins(payload, { exclude } = {}) {
   return notify(recipients, payload);
 }
 
-/** Notifies admins plus every active employee who has been granted `module.action`. */
-export async function notifyUsersWithPermission(module, action, payload, { exclude } = {}) {
+/** Admins plus every active employee who has been granted `module.action`. */
+export async function listUsersWithPermission(module, action, { exclude } = {}) {
   const users = await User.find({
     status: USER_STATUS.ACTIVE,
     $or: [{ role: ROLES.ADMIN }, { [`permissions.${module}`]: action }],
   })
-    .select('_id')
+    .select('_id email')
     .lean();
-  const recipients = users.map((u) => u._id.toString()).filter((id) => id !== String(exclude));
-  return notify(recipients, payload);
+  return users.filter((u) => u._id.toString() !== String(exclude));
+}
+
+/** Notifies admins plus every active employee who has been granted `module.action`. */
+export async function notifyUsersWithPermission(module, action, payload, { exclude } = {}) {
+  const users = await listUsersWithPermission(module, action, { exclude });
+  return notify(users.map((u) => u._id), payload);
 }
 
 export async function listNotifications(userId, { limit, unreadOnly }) {

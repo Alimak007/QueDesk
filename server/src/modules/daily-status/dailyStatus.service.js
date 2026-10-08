@@ -6,7 +6,9 @@ import { buildPage, escapeRegex, getPagination } from '../../utils/pagination.js
 import { can } from '../../utils/permissions.js';
 import { canManage } from '../../utils/scope.js';
 import { Leave } from '../leaves/leave.model.js';
+import { listUsersWithPermission } from '../notifications/notification.service.js';
 import { User } from '../users/user.model.js';
+import { sendStatusReportEmail } from './dailyStatus.mail.js';
 import { DailyStatus } from './dailyStatus.model.js';
 
 const POPULATE = [
@@ -61,6 +63,11 @@ export async function createReport(data, actor) {
     });
   }
   const report = await DailyStatus.create({ ...data, employee: actor._id });
+
+  const reviewers = await listUsersWithPermission('dailyStatus', 'review', { exclude: actor._id });
+  // Not awaited: a slow mail server must not hold up the response.
+  sendStatusReportEmail(report, actor, reviewers);
+
   return report.populate(POPULATE);
 }
 

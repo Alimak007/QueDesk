@@ -106,6 +106,16 @@ Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` and `CLOUDINARY_API_SECRET` in
 
 Either way the browser only ever loads `/api/companies/:id/:kind`, so access stays behind the same permission checks as the rest of the app.
 
+### Leave and Daily Status emails
+
+Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` and `SMTP_PASS` in `server/.env` to send emails from the company address:
+
+- **New leave request** → everyone who can approve leave. The employee's reason is the body of the email, and replying goes to the employee.
+- **Leave approved, rejected, edited by an approver, or note changed** → the employee, with the request's current details.
+- **Daily status submitted** → everyone who can review daily status, with the report as the body. Later edits are not emailed.
+
+Leave emails go out alongside the in-app notifications; daily status is email only. Leave the SMTP settings blank and no email is sent. A mail server that is down never blocks an action: the failure is logged and the request still goes through.
+
 ---
 
 ## Project structure

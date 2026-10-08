@@ -27,5 +27,6 @@ export function leavePermissions(leave, { can, isAdmin, userId }) {
       (leave.status === 'pending' || (leave.status === 'approved' && leave.startDate > today)),
     canApprove: !own && approves && ['pending', 'rejected'].includes(leave.status),
     canReject: !own && approves && ['pending', 'approved'].includes(leave.status),
+    canEditNote: !own && approves && ['approved', 'rejected'].includes(leave.status),
   };
 }

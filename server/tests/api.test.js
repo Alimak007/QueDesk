@@ -18,6 +18,7 @@ const { createApp } = await import('../src/app.js');
 const { runMigrations } = await import('../src/config/migrations.js');
 await import('../src/models.js');
 const { createUser } = await import('../src/modules/users/user.service.js');
+const { testOutbox } = await import('../src/utils/mailer.js');
 
 const PASSWORD = 'Passw0rd!';
 
@@ -121,6 +122,14 @@ describe('leave privacy and workflow', () => {
     assert.equal(res.body.data.leave.status, 'pending');
     assert.equal(res.body.data.leave.days, 1);
     aliceLeave = res.body.data.leave;
+  });
+
+  test('a new request is emailed to the approvers with the reason as the body', async () => {
+    const mail = testOutbox.at(-1);
+    assert.deepEqual(mail.to, ['admin@test.io']);
+    assert.equal(mail.replyTo, 'alice@test.io');
+    assert.match(mail.subject, /^Leave request from Alice/);
+    assert.equal(mail.text.split('\n')[0], 'Personal work', 'the reason opens the email');
   });
 
   test('Saturdays and Sundays are not counted', async () => {
@@ -229,6 +238,39 @@ describe('leave privacy and workflow', () => {
     assert.ok(res.body.data.items.some((n) => n.type === 'leave_approved'));
     const bob = await agents.bob.get('/api/notifications');
     assert.equal(bob.body.data.items.length, 0);
+
+    const mail = testOutbox.at(-1);
+    assert.deepEqual(mail.to, ['alice@test.io']);
+    assert.match(mail.subject, /approved/);
+    assert.match(mail.text, /Status: Approved/);
+    assert.match(mail.text, /Note: Enjoy/);
+  });
+
+  test('changing the note or editing the request emails and notifies the employee again', async () => {
+    const review = (reviewNote) => agents.admin.patch(`/api/leaves/${aliceLeave.id}/review`).send({ status: 'approved', reviewNote });
+
+    const noted = await review('Enjoy, and hand over first');
+    assert.equal(noted.status, 200, JSON.stringify(noted.body));
+    assert.equal(noted.body.data.leave.status, 'approved');
+    assert.equal(noted.body.data.leave.reviewNote, 'Enjoy, and hand over first');
+    assert.match(testOutbox.at(-1).text, /Note: Enjoy, and hand over first/);
+    assert.equal((await review('Enjoy, and hand over first')).status, 409, 'nothing changed');
+
+    const sent = testOutbox.length;
+    const edited = await agents.admin.put(`/api/leaves/${aliceLeave.id}`).send({
+      type: 'earned',
+      startDate: aliceLeave.startDate,
+      endDate: aliceLeave.endDate,
+      reason: 'Personal work',
+    });
+    assert.equal(edited.status, 200, JSON.stringify(edited.body));
+    assert.equal(testOutbox.length, sent + 1);
+    assert.deepEqual(testOutbox.at(-1).to, ['alice@test.io']);
+    assert.match(testOutbox.at(-1).subject, /edited/);
+    assert.match(testOutbox.at(-1).text, /Type: Earned/);
+
+    const res = await agents.alice.get('/api/notifications');
+    assert.equal(res.body.data.items.filter((n) => n.type === 'leave_updated').length, 2);
   });
 
   test('employees can no longer edit an approved leave, but can cancel it before it starts', async () => {
@@ -376,12 +418,24 @@ describe('daily status privacy', () => {
 
   test('one report per employee per day', async () => {
     const today = new Date().toISOString().slice(0, 10);
-    const first = await agents.alice.post('/api/daily-status').send({ date: today, workDone: 'Built the API' });
+    const first = await agents.alice.post('/api/daily-status').send({ date: today, workDone: 'Built the API', blockers: 'None so far' });
     assert.equal(first.status, 201);
     report = first.body.data.report;
 
+    const sent = testOutbox.length;
     const dup = await agents.alice.post('/api/daily-status').send({ date: today, workDone: 'Again' });
     assert.equal(dup.status, 409);
+    assert.equal(testOutbox.length, sent, 'a rejected report sends nothing');
+  });
+
+  test('a submitted report is emailed to the reviewers with its details', async () => {
+    const mail = testOutbox.at(-1);
+    assert.deepEqual(mail.to, ['admin@test.io']);
+    assert.equal(mail.replyTo, 'alice@test.io');
+    assert.equal(mail.subject, `Daily status from Alice: ${report.date}`);
+    assert.match(mail.text, /^Work done:\nBuilt the API\n/);
+    assert.match(mail.text, /Blockers:\nNone so far\n/);
+    assert.doesNotMatch(mail.text, /Next steps:|Hours worked:/, 'empty sections are left out');
   });
 
   test('future dates are rejected', async () => {

@@ -1,4 +1,4 @@
-import { Ban, Check, CircleCheck, CircleX, Clock3, Pencil, X } from 'lucide-react';
+import { Ban, Check, CircleCheck, CircleX, Clock3, MessageSquare, Pencil, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button, ConfirmDialog, DescriptionList, ErrorState, FormField, Sheet, Spinner, Textarea, UserCell } from '@/components/ui';
@@ -38,6 +38,8 @@ export function LeaveDetailsSheet({ leaveId, open, onOpenChange, onEdit, initial
   const [confirmCancel, setConfirmCancel] = useState(false);
 
   const perms = leavePermissions(leave, { can, isAdmin, userId: user.id });
+  // Reviewing with the status the leave already has only changes the note.
+  const noteOnly = Boolean(reviewMode) && reviewMode === leave?.status;
 
   const reopened = useResetOnChange(open ? `${leaveId}:${initialReviewMode}` : null);
   if (reopened) {
@@ -53,7 +55,7 @@ export function LeaveDetailsSheet({ leaveId, open, onOpenChange, onEdit, initial
   const submitReview = async () => {
     try {
       await reviewLeave.mutateAsync({ id: leave.id, status: reviewMode, reviewNote: note.trim() || undefined });
-      toast.success(reviewMode === 'approved' ? 'Leave approved' : 'Leave rejected', {
+      toast.success(noteOnly ? 'Note saved' : reviewMode === 'approved' ? 'Leave approved' : 'Leave rejected', {
         description: `${fullName(leave.employee)} has been notified.`,
       });
       closeReview();
@@ -73,7 +75,7 @@ export function LeaveDetailsSheet({ leaveId, open, onOpenChange, onEdit, initial
   };
 
   const footer =
-    leave && (perms.canEdit || perms.canCancel || perms.canApprove || perms.canReject) && !reviewMode ? (
+    leave && (perms.canEdit || perms.canCancel || perms.canApprove || perms.canReject || perms.canEditNote) && !reviewMode ? (
       <>
         {perms.canCancel && (
           <Button variant="danger-soft" leftIcon={Ban} onClick={() => setConfirmCancel(true)} className="mr-auto">
@@ -83,6 +85,18 @@ export function LeaveDetailsSheet({ leaveId, open, onOpenChange, onEdit, initial
         {perms.canEdit && (
           <Button variant="secondary" leftIcon={Pencil} onClick={() => onEdit(leave)}>
             Edit
+          </Button>
+        )}
+        {perms.canEditNote && (
+          <Button
+            variant="secondary"
+            leftIcon={MessageSquare}
+            onClick={() => {
+              setNote(leave.reviewNote ?? '');
+              setReviewMode(leave.status);
+            }}
+          >
+            {leave.reviewNote ? 'Edit note' : 'Add note'}
           </Button>
         )}
         {perms.canReject && (
@@ -149,14 +163,20 @@ export function LeaveDetailsSheet({ leaveId, open, onOpenChange, onEdit, initial
               <div
                 className={cn(
                   'rounded-xl border p-4',
-                  reviewMode === 'approved' ? 'border-emerald-200 bg-emerald-50/50' : 'border-red-200 bg-red-50/50',
+                  noteOnly
+                    ? 'border-slate-200 bg-slate-50/50'
+                    : reviewMode === 'approved'
+                      ? 'border-emerald-200 bg-emerald-50/50'
+                      : 'border-red-200 bg-red-50/50',
                 )}
               >
                 <p className="text-sm font-semibold text-slate-900">
-                  {reviewMode === 'approved' ? 'Approve this leave?' : 'Reject this leave?'}
+                  {noteOnly ? 'Note to employee' : reviewMode === 'approved' ? 'Approve this leave?' : 'Reject this leave?'}
                 </p>
-                <p className="mt-0.5 text-xs text-slate-600">The employee will be notified of your decision.</p>
-                <FormField label="Note to employee (optional)" className="mt-3">
+                <p className="mt-0.5 text-xs text-slate-600">
+                  {noteOnly ? 'The employee will be notified of the updated note.' : 'The employee will be notified of your decision.'}
+                </p>
+                <FormField label={noteOnly ? 'Note' : 'Note to employee (optional)'} className="mt-3">
                   {(field) => (
                     <Textarea
                       {...field}
@@ -174,11 +194,12 @@ export function LeaveDetailsSheet({ leaveId, open, onOpenChange, onEdit, initial
                   </Button>
                   <Button
                     size="sm"
-                    variant={reviewMode === 'approved' ? 'primary' : 'danger'}
+                    variant={noteOnly || reviewMode === 'approved' ? 'primary' : 'danger'}
                     loading={reviewLeave.isPending}
+                    disabled={noteOnly && note.trim() === (leave.reviewNote ?? '')}
                     onClick={submitReview}
                   >
-                    {reviewMode === 'approved' ? 'Confirm approval' : 'Confirm rejection'}
+                    {noteOnly ? 'Save note' : reviewMode === 'approved' ? 'Confirm approval' : 'Confirm rejection'}
                   </Button>
                 </div>
               </div>

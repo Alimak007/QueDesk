@@ -6,7 +6,8 @@ import { USER_SUMMARY_FIELDS } from '../../utils/mongoose.js';
 import { buildPage, getPagination } from '../../utils/pagination.js';
 import { can } from '../../utils/permissions.js';
 import { canManage, isAdmin } from '../../utils/scope.js';
-import { notify, notifyUsersWithPermission } from '../notifications/notification.service.js';
+import { listUsersWithPermission, notify, notifyUsersWithPermission } from '../notifications/notification.service.js';
+import { sendLeaveRequestEmail, sendLeaveUpdateEmail } from './leave.mail.js';
 import { Leave } from './leave.model.js';
 
 const ACTIVE_STATUSES = [LEAVE_STATUS.PENDING, LEAVE_STATUS.APPROVED];
@@ -107,15 +108,18 @@ export async function applyLeave(data, actor) {
 
   const leave = await Leave.create({ ...data, days, employee: actor._id, status: LEAVE_STATUS.PENDING });
 
-  await notifyApprovers(
+  const approvers = await listUsersWithPermission('leave', 'approve', { exclude: actor._id });
+  await notify(
+    approvers.map((a) => a._id),
     {
       type: NOTIFICATION_TYPES.LEAVE_SUBMITTED,
       title: 'New leave request',
       message: `${fullName(actor)} requested ${days} day(s) of ${data.type} leave from ${data.startDate} to ${data.endDate}.`,
       link: `/leave?tab=team&leave=${leave.id}`,
     },
-    actor._id,
   );
+  // Not awaited: a slow mail server must not hold up the response.
+  sendLeaveRequestEmail(leave, actor, approvers);
 
   return leave.populate(POPULATE);
 }
@@ -138,7 +142,19 @@ export async function updateLeave(id, data, actor) {
 
   Object.assign(leave, data, { days, lastEditedBy: actor._id });
   await leave.save();
-  return leave.populate(POPULATE);
+  await leave.populate(POPULATE);
+
+  if (!own) {
+    await notify(leave.employee._id, {
+      type: NOTIFICATION_TYPES.LEAVE_UPDATED,
+      title: 'Leave request edited',
+      message: `${fullName(actor)} edited your leave request. It is now ${leave.type} leave from ${leave.startDate} to ${leave.endDate}.`,
+      link: `/leave?leave=${leave.id}`,
+    });
+    sendLeaveUpdateEmail(leave, actor, 'edited');
+  }
+
+  return leave;
 }
 
 export async function cancelLeave(id, actor) {
@@ -181,8 +197,23 @@ export async function reviewLeave(id, { status, reviewNote = '' }, actor) {
   if (leave.status === LEAVE_STATUS.CANCELLED) {
     throw ApiError.conflict('This leave request was cancelled by the employee');
   }
+  // Sending the current status again is how an approver adds or changes the note.
   if (leave.status === status) {
-    throw ApiError.conflict(`This leave request is already ${status}`);
+    if (leave.reviewNote === reviewNote) {
+      throw ApiError.conflict(`This leave request is already ${status}`);
+    }
+    leave.reviewNote = reviewNote;
+    await leave.save();
+    await leave.populate(POPULATE);
+
+    await notify(leave.employee._id, {
+      type: NOTIFICATION_TYPES.LEAVE_UPDATED,
+      title: 'Leave note updated',
+      message: `${fullName(actor)} updated the note on your ${leave.type} leave from ${leave.startDate} to ${leave.endDate}.`,
+      link: `/leave?leave=${leave.id}`,
+    });
+    sendLeaveUpdateEmail(leave, actor, 'note');
+    return leave;
   }
   if (status === LEAVE_STATUS.APPROVED) {
     await assertNoOverlap(leave.employee, leave, leave._id);
@@ -190,9 +221,10 @@ export async function reviewLeave(id, { status, reviewNote = '' }, actor) {
 
   Object.assign(leave, { status, reviewNote, reviewedBy: actor._id, reviewedAt: new Date() });
   await leave.save();
+  await leave.populate(POPULATE);
 
   const approved = status === LEAVE_STATUS.APPROVED;
-  await notify(leave.employee, {
+  await notify(leave.employee._id, {
     type: approved ? NOTIFICATION_TYPES.LEAVE_APPROVED : NOTIFICATION_TYPES.LEAVE_REJECTED,
     title: approved ? 'Leave approved' : 'Leave rejected',
     message: `Your ${leave.type} leave from ${leave.startDate} to ${leave.endDate} was ${status} by ${fullName(actor)}.${
@@ -200,8 +232,9 @@ export async function reviewLeave(id, { status, reviewNote = '' }, actor) {
     }`,
     link: `/leave?leave=${leave.id}`,
   });
+  sendLeaveUpdateEmail(leave, actor, status);
 
-  return leave.populate(POPULATE);
+  return leave;
 }
 
 /**

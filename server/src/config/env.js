@@ -25,6 +25,17 @@ const envSchema = z.object({
   CLOUDINARY_CLOUD_NAME: z.string().trim().default(''),
   CLOUDINARY_API_KEY: z.string().trim().default(''),
   CLOUDINARY_API_SECRET: z.string().trim().default(''),
+
+  /**
+   * SMTP account that sends leave emails. Leave these blank to switch email
+   * off — in-app notifications keep working either way.
+   */
+  SMTP_HOST: z.string().trim().default(''),
+  SMTP_PORT: z.coerce.number().int().positive().default(465),
+  SMTP_USER: z.string().trim().default(''),
+  SMTP_PASS: z.string().default(''),
+  /** Display name shown next to the company address. */
+  MAIL_FROM_NAME: z.string().trim().default('QueDesk'),
 });
 
 const parsed = envSchema.safeParse(process.env);
