@@ -4,6 +4,7 @@ import { createBrowserRouter, Outlet } from 'react-router';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { FullPageLoader } from '@/components/layout/FullPageLoader';
 import { GuestOnly, RedirectTo, RequireAdmin, RequireAuth, RequirePermission } from '@/features/auth/guards';
+import { PolicyGate } from '@/features/policies/PolicyGate';
 import { RouteErrorBoundary } from '@/pages/RouteErrorBoundary';
 
 const LoginPage = lazy(() => import('@/features/auth/LoginPage'));
@@ -25,6 +26,9 @@ const PermissionsPage = lazy(() => import('@/features/permissions/PermissionsPag
 const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
 const CompanyEditorPage = lazy(() => import('@/features/settings/CompanyEditorPage'));
 const ProfilePage = lazy(() => import('@/features/profile/ProfilePage'));
+const PoliciesPage = lazy(() => import('@/features/policies/PoliciesPage'));
+const PolicyViewPage = lazy(() => import('@/features/policies/PolicyViewPage'));
+const PolicyEditorPage = lazy(() => import('@/features/policies/PolicyEditorPage'));
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'));
 
 function Root() {
@@ -48,83 +52,93 @@ export const router = createBrowserRouter([
         element: <RequireAuth />,
         children: [
           {
-            element: <AppLayout />,
+            // Employees accept the company policies before anything else.
+            element: <PolicyGate />,
             children: [
-              { index: true, element: <DashboardPage /> },
-              { path: 'profile', element: <ProfilePage /> },
-
-              /* CRM */
               {
-                element: <RequirePermission module="leads" />,
-                children: [{ path: 'leads', element: <LeadsPage /> }],
-              },
-              {
-                element: <RequirePermission module="customers" />,
-                children: [{ path: 'customers', element: <CustomersPage /> }],
-              },
-
-              /* HR */
-              {
-                element: <RequirePermission module="employees" />,
+                element: <AppLayout />,
                 children: [
-                  { path: 'employees', element: <EmployeesPage /> },
-                  { path: 'employees/:id', element: <EmployeeDetailsPage /> },
+                  { index: true, element: <DashboardPage /> },
+                  { path: 'profile', element: <ProfilePage /> },
+                  { path: 'policies', element: <PoliciesPage /> },
+                  { path: 'policies/:id', element: <PolicyViewPage /> },
+
+                  /* CRM */
+                  {
+                    element: <RequirePermission module="leads" />,
+                    children: [{ path: 'leads', element: <LeadsPage /> }],
+                  },
+                  {
+                    element: <RequirePermission module="customers" />,
+                    children: [{ path: 'customers', element: <CustomersPage /> }],
+                  },
+
+                  /* HR */
+                  {
+                    element: <RequirePermission module="employees" />,
+                    children: [
+                      { path: 'employees', element: <EmployeesPage /> },
+                      { path: 'employees/:id', element: <EmployeeDetailsPage /> },
+                    ],
+                  },
+                  {
+                    element: <RequirePermission module="leave" />,
+                    children: [{ path: 'leave', element: <LeavePage /> }],
+                  },
+                  {
+                    element: <RequirePermission module="dailyStatus" />,
+                    children: [{ path: 'daily-status', element: <DailyStatusPage /> }],
+                  },
+                  {
+                    element: <RequirePermission module="payslips" />,
+                    children: [
+                      { path: 'payslips', element: <PayslipsPage /> },
+                      { path: 'payslips/new', element: <PayslipEditorPage /> },
+                      { path: 'payslips/:id', element: <PayslipViewPage /> },
+                      { path: 'payslips/:id/edit', element: <PayslipEditorPage /> },
+                    ],
+                  },
+
+                  /* Finance */
+                  {
+                    element: <RequirePermission module="invoices" />,
+                    children: [
+                      { path: 'invoices', element: <InvoicesPage /> },
+                      { path: 'invoices/new', element: <InvoiceEditorPage /> },
+                      { path: 'invoices/:id', element: <InvoiceViewPage /> },
+                      { path: 'invoices/:id/edit', element: <InvoiceEditorPage /> },
+                    ],
+                  },
+
+                  /* Calendar */
+                  {
+                    element: <RequirePermission module="calendar" />,
+                    children: [{ path: 'calendar', element: <CalendarPage /> }],
+                  },
+
+                  /* Administration */
+                  {
+                    element: <RequireAdmin />,
+                    children: [
+                      { path: 'permissions', element: <PermissionsPage /> },
+                      { path: 'settings', element: <SettingsPage /> },
+                      { path: 'settings/companies/new', element: <CompanyEditorPage /> },
+                      { path: 'settings/companies/:id', element: <CompanyEditorPage /> },
+                      { path: 'policies/new', element: <PolicyEditorPage /> },
+                      { path: 'policies/:id/edit', element: <PolicyEditorPage /> },
+                    ],
+                  },
+
+                  /* Routes from the previous navigation */
+                  { path: 'my-leave', element: <RedirectTo to="/leave" /> },
+                  { path: 'leave-management', element: <RedirectTo to="/leave" /> },
+                  { path: 'my-status', element: <RedirectTo to="/daily-status" /> },
+                  { path: 'sales', element: <RedirectTo to="/leads" /> },
+                  { path: 'sales/configuration', element: <RedirectTo to="/settings?tab=lead-form" /> },
+
+                  { path: '*', element: <NotFoundPage /> },
                 ],
               },
-              {
-                element: <RequirePermission module="leave" />,
-                children: [{ path: 'leave', element: <LeavePage /> }],
-              },
-              {
-                element: <RequirePermission module="dailyStatus" />,
-                children: [{ path: 'daily-status', element: <DailyStatusPage /> }],
-              },
-              {
-                element: <RequirePermission module="payslips" />,
-                children: [
-                  { path: 'payslips', element: <PayslipsPage /> },
-                  { path: 'payslips/new', element: <PayslipEditorPage /> },
-                  { path: 'payslips/:id', element: <PayslipViewPage /> },
-                  { path: 'payslips/:id/edit', element: <PayslipEditorPage /> },
-                ],
-              },
-
-              /* Finance */
-              {
-                element: <RequirePermission module="invoices" />,
-                children: [
-                  { path: 'invoices', element: <InvoicesPage /> },
-                  { path: 'invoices/new', element: <InvoiceEditorPage /> },
-                  { path: 'invoices/:id', element: <InvoiceViewPage /> },
-                  { path: 'invoices/:id/edit', element: <InvoiceEditorPage /> },
-                ],
-              },
-
-              /* Calendar */
-              {
-                element: <RequirePermission module="calendar" />,
-                children: [{ path: 'calendar', element: <CalendarPage /> }],
-              },
-
-              /* Administration */
-              {
-                element: <RequireAdmin />,
-                children: [
-                  { path: 'permissions', element: <PermissionsPage /> },
-                  { path: 'settings', element: <SettingsPage /> },
-                  { path: 'settings/companies/new', element: <CompanyEditorPage /> },
-                  { path: 'settings/companies/:id', element: <CompanyEditorPage /> },
-                ],
-              },
-
-              /* Routes from the previous navigation */
-              { path: 'my-leave', element: <RedirectTo to="/leave" /> },
-              { path: 'leave-management', element: <RedirectTo to="/leave" /> },
-              { path: 'my-status', element: <RedirectTo to="/daily-status" /> },
-              { path: 'sales', element: <RedirectTo to="/leads" /> },
-              { path: 'sales/configuration', element: <RedirectTo to="/settings?tab=lead-form" /> },
-
-              { path: '*', element: <NotFoundPage /> },
             ],
           },
         ],

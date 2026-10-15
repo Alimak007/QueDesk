@@ -9,10 +9,16 @@ export const api = axios.create({
 });
 
 let unauthorizedHandler = null;
+let policyRequiredHandler = null;
 
 /** Registered by the auth provider so an expired session signs the user out everywhere. */
 export function onUnauthorized(handler) {
   unauthorizedHandler = handler;
+}
+
+/** Registered by the policy gate: the API refused because policies are waiting to be accepted. */
+export function onPolicyAcceptanceRequired(handler) {
+  policyRequiredHandler = handler;
 }
 
 /**
@@ -38,7 +44,9 @@ api.interceptors.response.use(
     if (status === 401 && !url.includes('/auth/login')) {
       unauthorizedHandler?.();
     }
-    return Promise.reject(normalizeError(error));
+    const normalized = normalizeError(error);
+    if (normalized.code === 'POLICY_ACCEPTANCE_REQUIRED') policyRequiredHandler?.();
+    return Promise.reject(normalized);
   },
 );
 
@@ -88,6 +96,8 @@ export const http = {
   put: (url, body) => unwrap(api.put(url, body)),
   patch: (url, body) => unwrap(api.patch(url, body)),
   delete: (url) => unwrap(api.delete(url)),
+  /** Sends a FormData upload; files can take longer than the default timeout. */
+  upload: (url, formData) => unwrap(api.post(url, formData, { timeout: 120000 })),
 };
 
 /** Fetches a binary document (PDF) as a Blob, keeping the session cookie. */

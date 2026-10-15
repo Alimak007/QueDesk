@@ -10,7 +10,10 @@ const formatDates = (leave) =>
   leave.startDate === leave.endDate ? leave.startDate : `${leave.startDate} to ${leave.endDate}`;
 
 function formatDuration(leave) {
-  if (leave.isHalfDay) return `Half day (${leave.halfDaySession === 'first_half' ? 'first half' : 'second half'})`;
+  if (leave.isHalfDay) {
+    if (!leave.halfDaySession) return 'Half day';
+    return `Half day (${leave.halfDaySession === 'first_half' ? 'first half' : 'second half'})`;
+  }
   return `${leave.days} ${leave.days === 1 ? 'day' : 'days'}`;
 }
 
@@ -65,7 +68,7 @@ export function sendLeaveUpdateEmail(leave, actor, action) {
       `Type: ${typeLabel(leave.type)}`,
       `Dates: ${formatDates(leave)}`,
       `Duration: ${formatDuration(leave)}`,
-      `Reason: ${leave.reason}`,
+      `Reason: ${leave.reason || 'Not given'}`,
       ...(leave.reviewNote ? [`Note: ${leave.reviewNote}`] : []),
       '',
       `View it in QueDesk: ${appUrl(`/leave?leave=${leave.id}`)}`,

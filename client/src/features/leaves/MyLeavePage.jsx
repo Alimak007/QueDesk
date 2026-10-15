@@ -148,7 +148,10 @@ export default function MyLeavePage({ embedded = false }) {
                     <Td>
                       <LeaveStatusBadge status={leave.status} />
                     </Td>
-                    <Td className="whitespace-nowrap text-slate-500">{formatDate(leave.createdAt, 'd MMM yyyy')}</Td>
+                    <Td className="whitespace-nowrap text-slate-500">
+                      {/* A recorded leave was applied for before it reached the portal. */}
+                      {formatDate(leave.appliedOn ?? leave.createdAt, 'd MMM yyyy')}
+                    </Td>
                   </Tr>
                 ))}
               </tbody>

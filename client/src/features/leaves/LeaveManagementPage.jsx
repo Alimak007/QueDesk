@@ -1,4 +1,4 @@
-import { Check, FilterX, Plane, X } from 'lucide-react';
+import { Check, FileSpreadsheet, FilterX, History, Plane, X } from 'lucide-react';
 import { useState } from 'react';
 import {
   Badge,
@@ -28,8 +28,10 @@ import { fullName } from '@/lib/utils';
 import { useLeaves } from './api';
 import { LeaveStatusBadge, LeaveTypeLabel } from './components';
 import { formatLeaveDays } from './utils';
+import { ImportLeaveModal } from './ImportLeaveModal';
 import { LeaveDetailsSheet } from './LeaveDetailsSheet';
 import { LeaveFormModal } from './LeaveFormModal';
+import { RecordLeaveModal } from './RecordLeaveModal';
 
 const DEFAULTS = { status: 'pending', employee: '', type: '', from: '', to: '', page: 1 };
 
@@ -43,6 +45,8 @@ export default function LeaveManagementPage({ embedded = false }) {
     setDetailsId(id);
   };
   const [editLeave, setEditLeave] = useState(null);
+  const [recording, setRecording] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const { data, isPending, isError, error, refetch, isFetching } = useLeaves({
     ...filters,
@@ -63,14 +67,24 @@ export default function LeaveManagementPage({ embedded = false }) {
 
       <Card>
         <div className="space-y-3 border-b border-slate-100 px-5 py-4">
-          <Tabs
-            value={filters.status}
-            onChange={(status) => setFilters({ status })}
-            options={[
-              ...LEAVE_STATUSES.map((s) => ({ ...s, count: s.value === 'pending' ? pendingCount : undefined })),
-              { value: '', label: 'All requests' },
-            ]}
-          />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Tabs
+              value={filters.status}
+              onChange={(status) => setFilters({ status })}
+              options={[
+                ...LEAVE_STATUSES.map((s) => ({ ...s, count: s.value === 'pending' ? pendingCount : undefined })),
+                { value: '', label: 'All requests' },
+              ]}
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" size="sm" leftIcon={History} onClick={() => setRecording(true)}>
+                Add past leave
+              </Button>
+              <Button variant="secondary" size="sm" leftIcon={FileSpreadsheet} onClick={() => setImporting(true)}>
+                Import from Excel
+              </Button>
+            </div>
+          </div>
           <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
             <Select
               aria-label="Filter by employee"
@@ -152,7 +166,9 @@ export default function LeaveManagementPage({ embedded = false }) {
                     <Td>
                       <LeaveStatusBadge status={leave.status} />
                     </Td>
-                    <Td className="whitespace-nowrap text-slate-500">{timeAgo(leave.createdAt)}</Td>
+                    <Td className="whitespace-nowrap text-slate-500">
+                      {leave.source === 'recorded' ? <Badge tone="slate">Recorded</Badge> : timeAgo(leave.createdAt)}
+                    </Td>
                     <Td align="right">
                       {leave.status === 'pending' && (
                         <div className="flex justify-end gap-1" onClick={(e) => e.stopPropagation()}>
@@ -199,6 +215,8 @@ export default function LeaveManagementPage({ embedded = false }) {
         }}
       />
       <LeaveFormModal open={Boolean(editLeave)} leave={editLeave} onOpenChange={(open) => !open && setEditLeave(null)} />
+      <RecordLeaveModal open={recording} onOpenChange={setRecording} />
+      <ImportLeaveModal open={importing} onOpenChange={setImporting} />
     </>
   );
 }

@@ -34,7 +34,7 @@ Open http://localhost:5173 and sign in with the admin account set by `SEED_ADMIN
 | `npm run seed` | First admin + default forms only. **Never creates business data.** Idempotent |
 | `npm run seed:companies` | Optional: adds the company profiles taken from the supplied templates |
 | `npm run seed:demo` | Demo employees, leave, reports, events and leads — for a throwaway database only |
-| `npm test` | API integration tests (48) on a throwaway in-memory MongoDB — no network or credentials needed |
+| `npm test` | API integration tests on a throwaway in-memory MongoDB — no network or credentials needed |
 | `npm run lint` | ESLint for the client |
 
 ---
@@ -48,6 +48,7 @@ QueDesk
 ├── HR             Employees · Leave · Daily Status · Payslips
 ├── Finance        Invoices
 ├── Calendar
+├── Policies
 └── Administration Permissions · Settings
 ```
 
@@ -77,6 +78,16 @@ Built on the same configurable-field engine as Leads, with its own form you can 
 - converting requires permission to create customers.
 
 Deleting the customer unlinks the lead, which puts it back on the board as an active lead — the way to undo a conversion made by mistake.
+
+### Past leave records (HR)
+Approvers can add leave that was already approved — history from an old register, or leave agreed outside the portal — from **Leave → Add past leave**, or in bulk from **Leave → Import from Excel**. Records are saved as approved, nobody is notified, and nobody can record their own leave.
+
+The import reads the supplied register layout (Employee ID, Employee Name, Leave Applied Date, Leave Type, From Date, To Date, No. of Days, Reason for Leave, Remarks); **Download template** gives a blank copy. Leave types use the register's codes: CL, SL, EL/PL, WFH, HD (half day), LWP, Other. Every file is previewed first, row by row, and only valid rows are imported. A row that overlaps leave already in QueDesk is skipped, so uploading the same file twice adds nothing.
+
+Dates are read day first (13/2/2026) unless month first is chosen. Excel set to month-first silently turns a typed 9/1/2026 into 1 September while leaving 13/2/2026 as text; when a file shows that mix, the converted dates are turned back and the preview says so. The template formats its date columns as text so this cannot happen.
+
+### Policies
+Admins write, publish, edit and archive company policies (employee, HR, leave, conduct, IT and more) under **Policies**, for everyone or for chosen departments. A policy can require acceptance: an employee then has to read it to the end and accept it before using QueDesk — on their first sign-in, and again whenever a policy is published or significantly changed (a "significant change" raises the version; small fixes do not). The API refuses every other request until they have. Afterwards they can read their policies any time, but never change them. Admins see who has accepted each version. A policy anyone has accepted can be archived but not deleted, so the record is kept.
 
 ### Permissions (Administration)
 Per-employee, per-module permissions with actions such as view, create, edit, delete, download, approve and review. Admins always keep full access.
@@ -164,6 +175,8 @@ quedesk/
 | Document details | Invoices snapshot the seller details at save time so historical documents stay accurate; logos and signatures are always read live. |
 | Image storage | Cloudinary when `CLOUDINARY_*` is configured, otherwise MongoDB. Formats pdfkit cannot embed (WebP, AVIF, HEIC…) are converted to PNG on the way into a document. |
 | Default permissions | New employees get self-service Leave and Daily Status, Lead view/create/edit and Calendar view. Everything else is off until granted. |
+| Recorded leave | Saved as approved by the person who recorded it, with no notification. The register's No. of Days is kept when it differs from the working days (flagged in the preview). Reason and half-day session may be blank. |
+| Policy acceptance | Employees only; admins write the policies. Acceptance is per version and never edited or removed. |
 | Not included | Attachments on leave/status, emailed documents, recurring invoices. |
 
 ---

@@ -9,6 +9,7 @@ import { after, before, describe, test } from 'node:test';
 process.env.NODE_ENV = 'test';
 
 const { default: request } = await import('supertest');
+const { default: ExcelJS } = await import('exceljs');
 const { startTestDatabase, stopTestDatabase } = await import('./helpers.js');
 const { createApp } = await import('../src/app.js');
 const { runMigrations } = await import('../src/config/migrations.js');
@@ -569,5 +570,216 @@ describe('audit log', () => {
     for (const expected of ['invoice.created', 'payslip.created', 'customer.converted', 'permission.updated']) {
       assert.ok(actions.includes(expected), `missing audit entry ${expected}`);
     }
+  });
+});
+
+describe('recording past leave', () => {
+  let rahul;
+
+  /** A register laid out like the supplied template, typed day-first into month-first Excel. */
+  async function register(rows) {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Register');
+    sheet.addRow(['Sr. No', 'Employee ID', 'Employee Name', 'Department', 'Leave Applied Date', 'Leave Type', 'From Date', 'To Date', 'No. of Days', 'Reason for Leave', 'Remarks']);
+    rows.forEach((row, i) => sheet.addRow([i + 1, ...row]));
+    // A legend beside the table and a total underneath, as in the real file.
+    sheet.getCell('M2').value = 'HD';
+    sheet.getCell('N2').value = 'Half Day';
+    sheet.addRow([null, null, null, null, null, null, null, null, { formula: 'SUM(I2:I9)', result: 4.5 }]);
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
+
+  const upload = (agent, file, fields = {}) => {
+    const req = agent.post('/api/leaves/import').attach('file', file, 'register.xlsx');
+    for (const [key, value] of Object.entries(fields)) req.field(key, value);
+    return req;
+  };
+
+  const binary = (res, callback) => {
+    const chunks = [];
+    res.on('data', (chunk) => chunks.push(chunk));
+    res.on('end', () => callback(null, Buffer.concat(chunks)));
+  };
+
+  test('an approver records one approved leave; nobody can record their own', async () => {
+    rahul = await createUser({ firstName: 'Rahul', lastName: 'Shaikh', email: 'rahul@test.io', password: PASSWORD, employeeId: 'E2026002' });
+
+    const res = await agents.admin.post('/api/leaves/records').send({
+      employee: rahul.id,
+      type: 'sick',
+      startDate: '2026-03-02',
+      endDate: '2026-03-03',
+      appliedOn: '2026-03-02',
+      reviewNote: 'Recorded from the old register',
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const leave = res.body.data.leave;
+    assert.equal(leave.status, 'approved');
+    assert.equal(leave.source, 'recorded');
+    assert.equal(leave.days, 2);
+    assert.equal(leave.reason, '', 'a reason is optional on a record');
+
+    const clash = await agents.admin
+      .post('/api/leaves/records')
+      .send({ employee: rahul.id, type: 'casual', startDate: '2026-03-03', endDate: '2026-03-03' });
+    assert.equal(clash.status, 409);
+
+    const own = await agents.admin
+      .post('/api/leaves/records')
+      .send({ employee: ids.admin, type: 'casual', startDate: '2026-03-10', endDate: '2026-03-10' });
+    assert.equal(own.status, 403);
+  });
+
+  test('the template downloads with the register columns', async () => {
+    const res = await agents.admin.get('/api/leaves/import/template').buffer(true).parse(binary);
+    assert.equal(res.status, 200);
+    assert.match(res.headers['content-type'], /spreadsheetml/);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(res.body);
+    assert.deepEqual(workbook.worksheets[0].getRow(1).values.slice(1, 4), ['Sr. No', 'Employee ID', 'Employee Name']);
+  });
+
+  test('a register is previewed first, with Excel-swapped dates read day-first', async () => {
+    const excelDate = (y, m, d) => new Date(Date.UTC(y, m - 1, d));
+    const file = await register([
+      // Excel stored the typed 9/1/2026 (9 January) as 1 September.
+      ['E2026002', 'Rahul S. Shaikh', 'IT', excelDate(2026, 9, 1), 'CL', excelDate(2026, 9, 1), excelDate(2026, 9, 1), 1, 'Engagement ceremony', null],
+      // A typed 13/2/2026 cannot be month-first, so Excel kept it as text.
+      ['E2026002', 'Rahul S. Shaikh', 'IT', '12/2/2026', 'HD', '13/2/2026', '13/2/2026', 0.5, 'Innovation function', null],
+      ['E2026002', 'Rahul S. Shaikh', 'IT', '23/7/2026', 'WFH', '23/7/2026', '24/7/2026', 2, 'Rain', 'Approved by phone'],
+      ['E9999999', 'Nobody', 'IT', null, 'CL', '20/01/2026', '20/01/2026', 1, 'x', null],
+      ['E2026002', 'Rahul S. Shaikh', 'IT', null, 'XYZ', '21/01/2026', '21/01/2026', 1, 'x', null],
+      ['E2026002', 'Rahul S. Shaikh', 'IT', null, 'CL', '24/7/2026', '24/7/2026', 1, 'Same day again', null],
+      ['E2026002', 'Rahul S. Shaikh', 'IT', null, 'SL', '2/3/2026', '2/3/2026', 1, 'Already recorded', null],
+    ]);
+
+    const countRahulLeave = async () =>
+      (await agents.admin.get('/api/leaves').query({ employee: rahul.id })).body.data.pagination.total;
+    const before = await countRahulLeave();
+
+    const preview = await upload(agents.admin, file);
+    assert.equal(preview.status, 200, JSON.stringify(preview.body));
+    const { rows, summary, notices } = preview.body.data;
+    assert.deepEqual(summary, { total: 7, ready: 3, failed: 4, withWarnings: 0 });
+    assert.ok(notices.some((n) => n.includes('read day-first')));
+
+    const [jan, half, wfh, unknown, badType, overlap, existing] = rows;
+    assert.deepEqual([jan.startDate, jan.endDate, jan.type, jan.days, jan.appliedOn], ['2026-01-09', '2026-01-09', 'casual', 1, '2026-01-09']);
+    assert.deepEqual([half.startDate, half.isHalfDay, half.days, half.type], ['2026-02-13', true, 0.5, 'casual']);
+    assert.deepEqual([wfh.type, wfh.days, wfh.remarks], ['wfh', 2, 'Approved by phone']);
+    assert.match(unknown.errors[0], /No employee has the ID "E9999999"/);
+    assert.match(badType.errors[0], /Unknown leave type "XYZ"/);
+    assert.match(overlap.errors[0], /Overlaps row 4 of this file/);
+    assert.match(existing.errors[0], /Overlaps approved leave/);
+    assert.equal(await countRahulLeave(), before, 'a preview saves nothing');
+
+    const imported = await upload(agents.admin, file, { commit: 'true' });
+    assert.equal(imported.status, 200);
+    assert.equal(imported.body.data.imported, 3);
+    assert.equal(await countRahulLeave(), before + 3);
+
+    const again = await upload(agents.admin, file, { commit: 'true' });
+    assert.equal(again.body.data.imported, 0, 'uploading the same file twice adds nothing');
+    assert.match(again.body.data.rows[0].errors[0], /Already recorded/);
+  });
+
+  test('only approvers can import, and only Excel workbooks are accepted', async () => {
+    const file = await register([['E2026002', 'Rahul', 'IT', null, 'CL', '5/1/2026', '5/1/2026', 1, 'x', null]]);
+    const rahulAgent = await signIn('rahul@test.io');
+    assert.equal((await upload(rahulAgent, file)).status, 403);
+    assert.equal((await rahulAgent.post('/api/leaves/records').send({})).status, 403);
+
+    const text = await agents.admin.post('/api/leaves/import').attach('file', Buffer.from('not a workbook'), 'register.xlsx');
+    assert.equal(text.status, 400);
+  });
+});
+
+describe('policies', () => {
+  let lenaAgent;
+  let policy;
+
+  before(async () => {
+    await createUser({ firstName: 'Lena', email: 'lena@test.io', password: PASSWORD, department: 'Legal' });
+    lenaAgent = await signIn('lena@test.io');
+  });
+
+  test('only admins create policies; a draft is invisible to employees', async () => {
+    const body = { title: 'Code of Conduct', category: 'conduct', content: 'Be kind.\nBe honest.', departments: ['Legal'] };
+    assert.equal((await lenaAgent.post('/api/policies').send(body)).status, 403);
+
+    const draft = await agents.admin.post('/api/policies').send(body);
+    assert.equal(draft.status, 201, JSON.stringify(draft.body));
+    policy = draft.body.data.policy;
+    assert.equal(policy.status, 'draft');
+    assert.equal((await lenaAgent.get(`/api/policies/${policy.id}`)).status, 404);
+    assert.equal((await lenaAgent.get('/api/policies/pending')).body.data.items.length, 0);
+  });
+
+  test('once published, the employee must accept it before using the rest of the portal', async () => {
+    const published = await agents.admin.patch(`/api/policies/${policy.id}/status`).send({ status: 'published' });
+    assert.equal(published.status, 200);
+
+    const blocked = await lenaAgent.get('/api/leaves');
+    assert.equal(blocked.status, 403);
+    assert.equal(blocked.body.error.code, 'POLICY_ACCEPTANCE_REQUIRED');
+    assert.equal((await lenaAgent.get('/api/auth/me')).status, 200, 'the session still works');
+
+    const pending = await lenaAgent.get('/api/policies/pending');
+    assert.deepEqual(pending.body.data.items.map((p) => p.title), ['Code of Conduct']);
+
+    // The policy is for Legal only; everyone else carries on as before.
+    assert.equal((await agents.emma.get('/api/policies/pending')).body.data.items.length, 0);
+
+    const stale = await lenaAgent.post('/api/policies/accept').send({ policies: [{ id: policy.id, version: 2 }] });
+    assert.equal(stale.status, 409, 'a version the employee did not read cannot be accepted');
+
+    const accepted = await lenaAgent.post('/api/policies/accept').send({ policies: [{ id: policy.id, version: 1 }] });
+    assert.equal(accepted.status, 200);
+    assert.equal(accepted.body.data.pending, 0);
+    assert.equal((await lenaAgent.get('/api/leaves')).status, 200);
+  });
+
+  test('the employee can read it again, but not change it', async () => {
+    const res = await lenaAgent.get(`/api/policies/${policy.id}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.data.policy.acceptance.current, true);
+    const list = await lenaAgent.get('/api/policies');
+    assert.deepEqual(list.body.data.items.map((p) => p.id), [policy.id]);
+
+    const edit = await lenaAgent.put(`/api/policies/${policy.id}`).send({ title: 'Mine now', category: 'conduct', content: 'x' });
+    assert.equal(edit.status, 403);
+    assert.equal((await lenaAgent.delete(`/api/policies/${policy.id}`)).status, 403);
+  });
+
+  test('a significant change asks everyone to accept again; small fixes do not', async () => {
+    const base = { title: 'Code of Conduct', category: 'conduct', departments: ['Legal'] };
+    const typo = await agents.admin.put(`/api/policies/${policy.id}`).send({ ...base, content: 'Be kind.\nBe honest!' });
+    assert.equal(typo.body.data.policy.version, 1);
+    assert.equal((await lenaAgent.get('/api/leaves')).status, 200);
+
+    const major = await agents.admin
+      .put(`/api/policies/${policy.id}`)
+      .send({ ...base, content: 'Be kind, honest and on time.', newVersion: true });
+    assert.equal(major.body.data.policy.version, 2);
+    assert.equal((await lenaAgent.get('/api/leaves')).status, 403);
+
+    const who = await agents.admin.get(`/api/policies/${policy.id}/acceptances`);
+    assert.deepEqual(who.body.data.items.map((i) => [i.employee.name, i.status]), [['Lena', 'outdated']]);
+
+    await lenaAgent.post('/api/policies/accept').send({ policies: [{ id: policy.id, version: 2 }] });
+    const stats = (await agents.admin.get(`/api/policies/${policy.id}`)).body.data.policy.stats;
+    assert.deepEqual(stats, { audience: 1, accepted: 1 });
+  });
+
+  test('an accepted policy is archived, not deleted; drafts can be deleted', async () => {
+    assert.equal((await agents.admin.delete(`/api/policies/${policy.id}`)).status, 409);
+    assert.equal((await agents.admin.patch(`/api/policies/${policy.id}/status`).send({ status: 'archived' })).status, 200);
+    assert.equal((await lenaAgent.get(`/api/policies/${policy.id}`)).status, 404);
+
+    const draft = await agents.admin.post('/api/policies').send({ title: 'Travel', category: 'finance', content: 'Book early.' });
+    assert.equal((await agents.admin.delete(`/api/policies/${draft.body.data.policy.id}`)).status, 204);
+
+    const log = await agents.admin.get('/api/audit-logs').query({ entityType: 'policy' });
+    assert.ok(log.body.data.items.some((i) => i.action === 'policy.archived'));
   });
 });

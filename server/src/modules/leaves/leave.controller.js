@@ -1,6 +1,7 @@
 import { ApiError } from '../../utils/ApiError.js';
 import { created, ok } from '../../utils/response.js';
 import { canManage } from '../../utils/scope.js';
+import * as leaveImport from './leave.import.js';
 import * as leaveService from './leave.service.js';
 
 export async function list(req, res) {
@@ -44,4 +45,20 @@ export async function cancel(req, res) {
 
 export async function review(req, res) {
   return ok(res, { leave: await leaveService.reviewLeave(req.valid.params.id, req.valid.body, req.user) });
+}
+
+export async function record(req, res) {
+  return created(res, { leave: await leaveImport.recordLeave(req.valid.body, req.user) });
+}
+
+/** Previews (or, with `commit`, imports) a leave register uploaded as .xlsx. */
+export async function importRecords(req, res) {
+  return ok(res, await leaveImport.importLeaveRecords(req.file.buffer, req.valid.body, req.user));
+}
+
+export async function importTemplate(_req, res) {
+  const buffer = await leaveImport.buildImportTemplate();
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename="quedesk-leave-records.xlsx"');
+  return res.send(Buffer.from(buffer));
 }

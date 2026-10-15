@@ -175,6 +175,8 @@ const ENTITY_LABEL = {
   invoice: 'Invoice',
   permission: 'Permission',
   company: 'Company',
+  policy: 'Policy',
+  leave: 'Leave record',
 };
 
 function AuditTab() {

@@ -39,6 +39,41 @@ const normalise = (v) => ({ ...v, halfDaySession: v.isHalfDay ? v.halfDaySession
 
 export const leaveSchema = leaveFields.superRefine(refineLeave).transform(normalise);
 
+/**
+ * Approved leave entered by an approver. Old registers rarely say which half of
+ * the day a half day was, or why, so both may be left out.
+ */
+export const recordLeaveSchema = z
+  .object({
+    employee: objectId('employee'),
+    type: z.enum(LEAVE_TYPES, { error: 'Select a leave type' }),
+    startDate: dateOnly('Start date'),
+    endDate: dateOnly('End date'),
+    isHalfDay: z.boolean().default(false),
+    halfDaySession: z.enum(HALF_DAY_SESSIONS).nullable().optional(),
+    reason: optionalTrimmed('Reason', 1000),
+    reviewNote: optionalTrimmed('Remarks', 500),
+    appliedOn: dateOnly('Applied date').nullable().optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.endDate < v.startDate) {
+      ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'End date cannot be before start date' });
+    }
+    if (v.isHalfDay && v.startDate !== v.endDate) {
+      ctx.addIssue({ code: 'custom', path: ['isHalfDay'], message: 'Half-day leave must start and end on the same day' });
+    }
+  })
+  .transform((v) => ({ ...v, halfDaySession: v.isHalfDay ? (v.halfDaySession ?? null) : null }));
+
+/** Form fields sent with the uploaded register. */
+export const importLeaveBody = z.object({
+  dateOrder: z.enum(['dmy', 'mdy']).default('dmy'),
+  commit: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+});
+
 export const reviewLeaveSchema = z.object({
   status: z.enum([LEAVE_STATUS.APPROVED, LEAVE_STATUS.REJECTED], { error: 'Status must be approved or rejected' }),
   reviewNote: optionalTrimmed('Note', 500),

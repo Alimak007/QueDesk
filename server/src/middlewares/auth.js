@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { USER_STATUS } from '../constants/index.js';
+import { hasPendingPolicies } from '../modules/policies/policy.service.js';
 import { User } from '../modules/users/user.model.js';
 import { ApiError } from '../utils/ApiError.js';
 import { can } from '../utils/permissions.js';
@@ -23,7 +24,25 @@ export async function authenticate(req, _res, next) {
   const result = await resolveUser(req);
   if (result.error) throw ApiError.unauthorized(result.error);
   req.user = result.user;
+  await assertPoliciesAccepted(req);
   next();
+}
+
+/** Where someone who still has policies to accept can go: their session, and the policies themselves. */
+const POLICY_EXEMPT_PATHS = ['/api/auth', '/api/policies'];
+
+/**
+ * An employee must accept the company policies before using the portal. The
+ * app shows them the policies first; this makes sure no other part of the API
+ * can be used in the meantime.
+ */
+async function assertPoliciesAccepted(req) {
+  if (POLICY_EXEMPT_PATHS.some((path) => req.baseUrl.startsWith(path))) return;
+  if (await hasPendingPolicies(req.user)) {
+    throw new ApiError(403, 'Please read and accept the company policies to continue.', {
+      code: 'POLICY_ACCEPTANCE_REQUIRED',
+    });
+  }
 }
 
 /** Attaches `req.user` when a valid session exists, but never rejects the request. */

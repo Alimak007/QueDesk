@@ -12,7 +12,7 @@ const router = Router();
 
 const listQuery = z.object({
   ...paginationQuery,
-  entityType: z.enum(['customer', 'payslip', 'invoice', 'permission', 'company']).optional(),
+  entityType: z.enum(['customer', 'payslip', 'invoice', 'permission', 'company', 'policy', 'leave']).optional(),
   entityId: objectId('entity').optional(),
   actor: objectId('actor').optional(),
 });

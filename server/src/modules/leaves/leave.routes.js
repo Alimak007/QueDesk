@@ -1,9 +1,18 @@
 import { Router } from 'express';
 import { authenticate, requirePermission } from '../../middlewares/auth.js';
+import { uploadSpreadsheet } from '../../middlewares/upload.js';
 import { validate } from '../../middlewares/validate.js';
 import { idParams } from '../../utils/validators.js';
 import * as controller from './leave.controller.js';
-import { balancesQuery, leaveSchema, listLeavesQuery, reviewLeaveSchema, summaryQuery } from './leave.validation.js';
+import {
+  balancesQuery,
+  importLeaveBody,
+  leaveSchema,
+  listLeavesQuery,
+  recordLeaveSchema,
+  reviewLeaveSchema,
+  summaryQuery,
+} from './leave.validation.js';
 
 const router = Router();
 const canRead = requirePermission('leave', 'view', 'approve');
@@ -20,6 +29,12 @@ router.post(
   validate({ body: leaveSchema }),
   controller.preview,
 );
+// Recording already-approved leave (one at a time or from a register) is for approvers.
+const canRecord = requirePermission('leave', 'approve');
+router.get('/import/template', canRecord, controller.importTemplate);
+router.post('/import', canRecord, uploadSpreadsheet, validate({ body: importLeaveBody }), controller.importRecords);
+router.post('/records', canRecord, validate({ body: recordLeaveSchema }), controller.record);
+
 router.get('/:id', canRead, validate({ params: idParams }), controller.getOne);
 
 router.post('/', requirePermission('leave', 'create'), validate({ body: leaveSchema }), controller.apply);

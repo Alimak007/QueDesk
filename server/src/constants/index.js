@@ -33,6 +33,33 @@ export const LEAVE_STATUS = Object.freeze({
 
 export const HALF_DAY_SESSIONS = Object.freeze(['first_half', 'second_half']);
 
+/**
+ * How a leave got into the portal: requested by the employee, or recorded by
+ * an approver as already approved (past leave, or leave agreed outside the portal).
+ */
+export const LEAVE_SOURCES = Object.freeze({
+  REQUEST: 'request',
+  RECORDED: 'recorded',
+});
+
+export const POLICY_STATUS = Object.freeze({
+  DRAFT: 'draft',
+  PUBLISHED: 'published',
+  ARCHIVED: 'archived',
+});
+
+export const POLICY_CATEGORIES = Object.freeze([
+  'general',
+  'employee',
+  'hr',
+  'leave',
+  'conduct',
+  'it_security',
+  'health_safety',
+  'finance',
+  'other',
+]);
+
 export const EVENT_TYPES = Object.freeze(['holiday', 'event', 'meeting', 'other']);
 
 export const SALES_FIELD_TYPES = Object.freeze([

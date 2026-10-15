@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Plane,
   ReceiptText,
+  ScrollText,
   Settings2,
   ShieldCheck,
   Users,
@@ -49,6 +50,7 @@ export const NAVIGATION = [
     items: [{ to: '/invoices', label: 'Invoices', icon: ReceiptText, module: 'invoices' }],
   },
   { type: 'item', to: '/calendar', label: 'Calendar', icon: CalendarDays, module: 'calendar' },
+  { type: 'item', to: '/policies', label: 'Policies', icon: ScrollText },
   {
     type: 'group',
     label: 'Administration',

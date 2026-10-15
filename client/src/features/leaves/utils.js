@@ -1,7 +1,10 @@
 import { todayDateOnly } from '@/lib/dates';
 
 export function formatLeaveDays(leave) {
-  if (leave.isHalfDay) return `Half day (${leave.halfDaySession === 'first_half' ? 'first half' : 'second half'})`;
+  if (leave.isHalfDay) {
+    if (!leave.halfDaySession) return 'Half day';
+    return `Half day (${leave.halfDaySession === 'first_half' ? 'first half' : 'second half'})`;
+  }
   return `${leave.days} ${leave.days === 1 ? 'day' : 'days'}`;
 }
 

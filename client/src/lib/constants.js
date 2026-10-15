@@ -34,6 +34,28 @@ export const LEAVE_STATUSES = [
 
 export const LEAVE_STATUS_MAP = Object.fromEntries(LEAVE_STATUSES.map((s) => [s.value, s]));
 
+export const POLICY_CATEGORIES = [
+  { value: 'general', label: 'General' },
+  { value: 'employee', label: 'Employee' },
+  { value: 'hr', label: 'HR' },
+  { value: 'leave', label: 'Leave & attendance' },
+  { value: 'conduct', label: 'Code of conduct' },
+  { value: 'it_security', label: 'IT & security' },
+  { value: 'health_safety', label: 'Health & safety' },
+  { value: 'finance', label: 'Finance & expenses' },
+  { value: 'other', label: 'Other' },
+];
+
+export const POLICY_CATEGORY_MAP = Object.fromEntries(POLICY_CATEGORIES.map((c) => [c.value, c]));
+
+export const POLICY_STATUSES = [
+  { value: 'published', label: 'Published', tone: 'green' },
+  { value: 'draft', label: 'Draft', tone: 'amber' },
+  { value: 'archived', label: 'Archived', tone: 'slate' },
+];
+
+export const POLICY_STATUS_MAP = Object.fromEntries(POLICY_STATUSES.map((s) => [s.value, s]));
+
 export const HALF_DAY_SESSIONS = [
   { value: 'first_half', label: 'First half' },
   { value: 'second_half', label: 'Second half' },

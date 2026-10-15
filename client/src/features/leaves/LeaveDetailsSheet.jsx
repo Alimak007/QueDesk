@@ -1,4 +1,4 @@
-import { Ban, Check, CircleCheck, CircleX, Clock3, MessageSquare, Pencil, X } from 'lucide-react';
+import { Ban, Check, CircleCheck, CircleX, Clock3, History, MessageSquare, Pencil, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button, ConfirmDialog, DescriptionList, ErrorState, FormField, Sheet, Spinner, Textarea, UserCell } from '@/components/ui';
@@ -121,7 +121,7 @@ export function LeaveDetailsSheet({ leaveId, open, onOpenChange, onEdit, initial
           onOpenChange(next);
         }}
         title="Leave request"
-        description={leave ? `Submitted ${timeAgo(leave.createdAt)}` : undefined}
+        description={leave ? `${leave.source === 'recorded' ? 'Recorded' : 'Submitted'} ${timeAgo(leave.createdAt)}` : undefined}
         footer={footer}
       >
         {isPending ? (
@@ -155,7 +155,16 @@ export function LeaveDetailsSheet({ leaveId, open, onOpenChange, onEdit, initial
               items={[
                 { label: 'Type', value: <LeaveTypeLabel type={leave.type} /> },
                 { label: 'Duration', value: leave.days },
-                { label: 'Reason', value: <span className="whitespace-pre-wrap">{leave.reason}</span>, full: true },
+                ...(leave.appliedOn ? [{ label: 'Applied on', value: formatDate(leave.appliedOn) }] : []),
+                {
+                  label: 'Reason',
+                  value: leave.reason ? (
+                    <span className="whitespace-pre-wrap">{leave.reason}</span>
+                  ) : (
+                    <span className="text-slate-400">No reason given</span>
+                  ),
+                  full: true,
+                },
               ]}
             />
 
@@ -208,14 +217,30 @@ export function LeaveDetailsSheet({ leaveId, open, onOpenChange, onEdit, initial
             <section>
               <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">Activity</h3>
               <ol>
-                <TimelineItem
-                  icon={Clock3}
-                  tone="bg-slate-100 text-slate-600"
-                  title="Request submitted"
-                  meta={formatDate(leave.createdAt, 'd MMM yyyy, h:mm a')}
-                  last={!leave.reviewedAt && !leave.cancelledAt}
-                />
-                {leave.reviewedAt && (
+                {leave.source === 'recorded' ? (
+                  <TimelineItem
+                    icon={History}
+                    tone="bg-slate-100 text-slate-600"
+                    title={`Recorded as approved by ${fullName(leave.reviewedBy) || 'an admin'}`}
+                    meta={formatDate(leave.createdAt, 'd MMM yyyy, h:mm a')}
+                    last={!leave.cancelledAt && leave.status === 'approved'}
+                  >
+                    {leave.reviewNote && leave.status === 'approved' && (
+                      <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
+                        “{leave.reviewNote}”
+                      </p>
+                    )}
+                  </TimelineItem>
+                ) : (
+                  <TimelineItem
+                    icon={Clock3}
+                    tone="bg-slate-100 text-slate-600"
+                    title="Request submitted"
+                    meta={formatDate(leave.createdAt, 'd MMM yyyy, h:mm a')}
+                    last={!leave.reviewedAt && !leave.cancelledAt}
+                  />
+                )}
+                {leave.reviewedAt && !(leave.source === 'recorded' && leave.status === 'approved') && (
                   <TimelineItem
                     icon={leave.status === 'rejected' ? CircleX : CircleCheck}
                     tone={leave.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}

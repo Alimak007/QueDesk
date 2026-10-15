@@ -16,6 +16,8 @@ export { Lead } from './modules/sales/lead.model.js';
 export { Leave } from './modules/leaves/leave.model.js';
 export { Notification } from './modules/notifications/notification.model.js';
 export { Payslip } from './modules/payslips/payslip.model.js';
+export { Policy } from './modules/policies/policy.model.js';
+export { PolicyAcceptance } from './modules/policies/policyAcceptance.model.js';
 export { SalesField } from './modules/sales/salesField.model.js';
 export { SalesSettings } from './modules/sales/salesSettings.model.js';
 export { User } from './modules/users/user.model.js';

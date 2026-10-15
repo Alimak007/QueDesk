@@ -12,7 +12,7 @@ import { Leave } from './leave.model.js';
 
 const ACTIVE_STATUSES = [LEAVE_STATUS.PENDING, LEAVE_STATUS.APPROVED];
 
-const POPULATE = [
+export const LEAVE_POPULATE = [
   { path: 'employee', select: USER_SUMMARY_FIELDS },
   { path: 'reviewedBy', select: 'firstName lastName' },
   { path: 'lastEditedBy', select: 'firstName lastName' },
@@ -38,7 +38,7 @@ export async function calculateLeaveDays({ startDate, endDate, isHalfDay }) {
   return days;
 }
 
-async function assertNoOverlap(employeeId, { startDate, endDate }, excludeId) {
+export async function assertNoOverlap(employeeId, { startDate, endDate }, excludeId) {
   const filter = {
     employee: employeeId,
     status: { $in: ACTIVE_STATUSES },
@@ -91,7 +91,7 @@ export async function listLeaves(query, actor) {
   const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1, _id: -1 };
 
   const [items, total] = await Promise.all([
-    Leave.find(filter).sort(sort).skip(skip).limit(limit).populate(POPULATE),
+    Leave.find(filter).sort(sort).skip(skip).limit(limit).populate(LEAVE_POPULATE),
     Leave.countDocuments(filter),
   ]);
   return buildPage(items, total, { page, limit });
@@ -99,7 +99,7 @@ export async function listLeaves(query, actor) {
 
 export async function getLeave(id, actor) {
   const leave = await findScopedLeave(id, actor);
-  return leave.populate(POPULATE);
+  return leave.populate(LEAVE_POPULATE);
 }
 
 export async function applyLeave(data, actor) {
@@ -121,7 +121,7 @@ export async function applyLeave(data, actor) {
   // Not awaited: a slow mail server must not hold up the response.
   sendLeaveRequestEmail(leave, actor, approvers);
 
-  return leave.populate(POPULATE);
+  return leave.populate(LEAVE_POPULATE);
 }
 
 export async function updateLeave(id, data, actor) {
@@ -142,7 +142,7 @@ export async function updateLeave(id, data, actor) {
 
   Object.assign(leave, data, { days, lastEditedBy: actor._id });
   await leave.save();
-  await leave.populate(POPULATE);
+  await leave.populate(LEAVE_POPULATE);
 
   if (!own) {
     await notify(leave.employee._id, {
@@ -174,7 +174,7 @@ export async function cancelLeave(id, actor) {
   leave.status = LEAVE_STATUS.CANCELLED;
   leave.cancelledAt = new Date();
   await leave.save();
-  await leave.populate(POPULATE);
+  await leave.populate(LEAVE_POPULATE);
 
   await notifyApprovers(
     {
@@ -204,7 +204,7 @@ export async function reviewLeave(id, { status, reviewNote = '' }, actor) {
     }
     leave.reviewNote = reviewNote;
     await leave.save();
-    await leave.populate(POPULATE);
+    await leave.populate(LEAVE_POPULATE);
 
     await notify(leave.employee._id, {
       type: NOTIFICATION_TYPES.LEAVE_UPDATED,
@@ -221,7 +221,7 @@ export async function reviewLeave(id, { status, reviewNote = '' }, actor) {
 
   Object.assign(leave, { status, reviewNote, reviewedBy: actor._id, reviewedAt: new Date() });
   await leave.save();
-  await leave.populate(POPULATE);
+  await leave.populate(LEAVE_POPULATE);
 
   const approved = status === LEAVE_STATUS.APPROVED;
   await notify(leave.employee._id, {

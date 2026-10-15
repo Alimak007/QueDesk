@@ -56,3 +56,38 @@ export function uploadImage(req, res, next) {
     return next();
   });
 }
+
+export const MAX_SPREADSHEET_BYTES = 5 * 1024 * 1024;
+
+const spreadsheetUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_SPREADSHEET_BYTES, files: 1, fields: 10 },
+});
+
+/** An .xlsx file is a ZIP archive; the old binary .xls format starts with an OLE header. */
+const ZIP_MAGIC = Buffer.from('504b0304', 'hex');
+const OLE_MAGIC = Buffer.from('d0cf11e0', 'hex');
+
+/** Accepts a single Excel workbook (.xlsx) in the `file` field, checked by its contents. */
+export function uploadSpreadsheet(req, res, next) {
+  if (!req.is('multipart/form-data')) {
+    return next(ApiError.badRequest('The spreadsheet must be sent as multipart/form-data with a "file" field'));
+  }
+
+  return spreadsheetUpload.single('file')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') return next(new ApiError(413, 'The spreadsheet must be 5 MB or smaller'));
+      return next(err instanceof ApiError ? err : ApiError.badRequest(err.message || 'Upload failed'));
+    }
+    if (!req.file) return next(ApiError.badRequest('Choose an Excel file to upload'));
+
+    const head = req.file.buffer.subarray(0, 4);
+    if (head.equals(OLE_MAGIC)) {
+      return next(ApiError.badRequest('This is an old-style .xls file. Open it in Excel and save it as .xlsx, then upload it again.'));
+    }
+    if (!head.equals(ZIP_MAGIC)) {
+      return next(ApiError.badRequest('That file is not an Excel workbook. Upload an .xlsx file.'));
+    }
+    return next();
+  });
+}

@@ -14,6 +14,7 @@ import leaveRoutes from '../modules/leaves/leave.routes.js';
 import notificationRoutes from '../modules/notifications/notification.routes.js';
 import payslipRoutes from '../modules/payslips/payslip.routes.js';
 import permissionRoutes from '../modules/permissions/permission.routes.js';
+import policyRoutes from '../modules/policies/policy.routes.js';
 import salesRoutes from '../modules/sales/sales.routes.js';
 import userRoutes from '../modules/users/user.routes.js';
 
@@ -53,6 +54,7 @@ router.use('/companies', companyRoutes);
 router.use('/payslips', payslipRoutes);
 router.use('/invoices', invoiceRoutes);
 router.use('/permissions', permissionRoutes);
+router.use('/policies', policyRoutes);
 router.use('/audit-logs', auditRoutes);
 router.use('/notifications', notificationRoutes);
 
