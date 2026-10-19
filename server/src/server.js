@@ -4,6 +4,7 @@ import { runMigrations } from './config/migrations.js';
 import { createApp } from './app.js';
 import './models.js';
 import { logger } from './utils/logger.js';
+import { checkMailSetup } from './utils/mailer.js';
 
 const RETRY_DELAY_MS = 15_000;
 
@@ -42,6 +43,8 @@ async function bootstrap() {
   const app = createApp();
   const server = app.listen(env.PORT, () => {
     logger.info(`QueDesk API listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
+    // Not awaited: it logs its own result and must never hold up the API.
+    checkMailSetup();
   });
 
   const shutdown = (signal) => {

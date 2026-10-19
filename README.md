@@ -127,6 +127,14 @@ Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER` and `SMTP_PASS` in `server/.env` to se
 
 Leave emails go out alongside the in-app notifications; daily status is email only. Leave the SMTP settings blank and no email is sent. A mail server that is down never blocks an action: the failure is logged and the request still goes through.
 
+**Settings are read only when the app starts.** After editing `server/.env`, restart the app (on the server: `pm2 restart quedesk-api`) or it keeps running without them. At startup the log says which state it is in:
+
+- `Email is ON: SMTP login succeeded` — everything is set up.
+- `Email is OFF: … not set in server/.env` — a setting is missing; every email is skipped.
+- `Email is ON but the SMTP login failed (…)` — the settings are there but the mail server refused or could not be reached.
+
+Every email then logs `Email sent` (with the mail server's reply), `Email skipped` or `Failed to send email` (with the reason). To test from the server itself, run `npm run mail:check -- you@example.com` in `server/`: it checks the settings, logs in over IPv4, IPv6 and 127.0.0.1, lists who receives leave emails and sends a test message.
+
 ---
 
 ## Project structure
