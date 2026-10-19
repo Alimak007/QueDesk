@@ -10,7 +10,8 @@
     "seed": "node --env-file-if-exists=.env src/scripts/seed.js",
     "seed:demo": "node --env-file-if-exists=.env src/scripts/seed.js --companies --demo",
     "test": "node --env-file-if-exists=.env --test --test-concurrency=1 --test-timeout=120000 \"tests/**/*.test.js\"",
-    "seed:companies": "node --env-file-if-exists=.env src/scripts/seed.js --companies"
+    "seed:companies": "node --env-file-if-exists=.env src/scripts/seed.js --companies",
+    "mail:check": "node --env-file-if-exists=.env src/scripts/mailCheck.js"
   },
   "dependencies": {
     "@fontsource/open-sans": "^5.3.0",

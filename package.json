@@ -15,7 +15,8 @@
     "seed:demo": "npm run seed:demo -w server",
     "test": "npm run test -w server",
     "lint": "npm run lint -w client",
-    "seed:companies": "npm run seed:companies -w server"
+    "seed:companies": "npm run seed:companies -w server",
+    "mail:check": "npm run mail:check -w server --"
   },
   "engines": {
     "node": ">=20.19"
